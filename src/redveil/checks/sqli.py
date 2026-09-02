@@ -390,6 +390,27 @@ class TimeBasedSQLiCheck(Check):
         baseline_median = candidate.get("baseline_median_ms", 0.0)
         probe_median = candidate.get("probe_median_ms", 0.0)
 
+        # Compute environment uncertainty from the verdict + result so
+        # the ConfidenceScorer can downgrade confidence for non-clean
+        # signals (WAF / rate-limit / flaky / anomaly). Mirrors the
+        # scoring used by _evidence_for_candidate so the Evidence and
+        # Finding agree on the same uncertainty number.
+        waf_observed = bool(result and result.waf_detected)
+        rate_observed = bool(result and result.rate_limited)
+        environment_uncertainty = 0.0
+        if waf_observed:
+            environment_uncertainty = max(environment_uncertainty, 0.7)
+        if rate_observed:
+            environment_uncertainty = max(environment_uncertainty, 0.8)
+        if verdict == TIMING_FLAKY:
+            environment_uncertainty = max(environment_uncertainty, 0.6)
+        elif verdict == TIMING_ANOMALY:
+            environment_uncertainty = max(environment_uncertainty, 0.5)
+        elif verdict == TIMING_REPRODUCIBLE:
+            environment_uncertainty = max(environment_uncertainty, 0.1)
+        else:
+            environment_uncertainty = max(environment_uncertainty, 0.3)
+
         # Build signals for the ConfidenceScorer. The signal kinds map to
         # dimensions: timing-related evidence lives in the "response"
         # dimension, while flakiness / WAF / rate-limit live in "behavior"
@@ -442,7 +463,7 @@ class TimeBasedSQLiCheck(Check):
             oracle = Oracle.STATUS_CODE_ONLY
 
         scorer = ConfidenceScorer()
-        confidence = scorer.confidence(signals, oracle)
+        confidence = scorer.confidence(signals, oracle, uncertainty=environment_uncertainty)
 
         # Map verdict to FindingStatus. Reproducible timing is the
         # only path to CONFIRMED — every other verdict (WAF,

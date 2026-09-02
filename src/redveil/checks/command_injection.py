@@ -185,6 +185,29 @@ def _build_signals(result: ReproducibilityResult) -> list[Signal]:
     return signals
 
 
+def _uncertainty_for_verdict(verdict: str) -> float:
+    """Map a ReproducibilityResult verdict to an environment-uncertainty score.
+
+    Matches the scoring used by the SQLi check's _evidence_for_candidate
+    so Wave 14 evidence fields and Finding confidence agree on the same
+    numbers. Range [0.0, 1.0] where 0.0 = full certainty, 1.0 = full
+    uncertainty about whether the signal came from the target or the
+    infrastructure in front of it.
+    """
+    if verdict == TIMING_REPRODUCIBLE:
+        return 0.1
+    if verdict == TIMING_FLAKY:
+        return 0.6
+    if verdict == TIMING_ANOMALY:
+        return 0.5
+    if verdict == WAF_INTERFERENCE:
+        return 0.7
+    if verdict == RATE_LIMITED:
+        return 0.8
+    # INCONCLUSIVE + unknown
+    return 0.3
+
+
 class CommandInjectionCheck(Check):
     meta = CheckMeta(
         id="command-injection",
@@ -526,7 +549,12 @@ class CommandInjectionCheck(Check):
         if result is not None:
             signals = _build_signals(result)
             scorer = ConfidenceScorer(environmental_penalty=0.0)
-            confidence = scorer.confidence(signals, Oracle.STATE_TRANSITION)
+            # uncertainty penalty: high when WAF / rate-limit / flaky
+            # baseline / anomaly was observed; low for reproducible.
+            uncertainty = _uncertainty_for_verdict(result.verdict)
+            confidence = scorer.confidence(
+                signals, Oracle.STATE_TRANSITION, uncertainty=uncertainty,
+            )
         else:
             # Legacy candidate path: keep the historical HIGH confidence.
             confidence = Confidence.HIGH
