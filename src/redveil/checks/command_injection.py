@@ -426,6 +426,45 @@ class CommandInjectionCheck(Check):
         req = candidate.get("request")
         if not resp or not req:
             return []
+        result = candidate.get("reproducibility")
+        verdict = candidate.get("verdict", INCONCLUSIVE)
+
+        # Wave 14 evidence fields — populate from ReproducibilityResult.
+        waf_indicators: list[str] = []
+        rate_limit_indicators: list[str] = []
+        environment_uncertainty = 0.0
+        if result is not None:
+            if result.waf_detected:
+                waf_indicators.append("probe_response_waf_pattern")
+                if resp.status_code in (403, 406, 419, 501):
+                    waf_indicators.append(f"status_{resp.status_code}")
+                if result.interference_body_length is not None:
+                    waf_indicators.append("body_length_change")
+                environment_uncertainty = max(environment_uncertainty, 0.7)
+            if result.rate_limited:
+                rate_limit_indicators.append(f"status_{resp.status_code}")
+                if resp.status_code in (429, 503):
+                    rate_limit_indicators.append("throttle_status")
+                environment_uncertainty = max(environment_uncertainty, 0.8)
+            if verdict == TIMING_FLAKY:
+                environment_uncertainty = max(environment_uncertainty, 0.6)
+            elif verdict == TIMING_ANOMALY:
+                environment_uncertainty = max(environment_uncertainty, 0.5)
+            elif verdict == TIMING_REPRODUCIBLE:
+                environment_uncertainty = max(environment_uncertainty, 0.1)
+            else:
+                environment_uncertainty = max(environment_uncertainty, 0.3)
+
+        control_timing_ms = None
+        if result is not None and result.control_samples:
+            control_timing_ms = statistics.median(result.control_samples)
+
+        # Map verdict → ValidationOutcome (mirrors assess()).
+        if verdict == TIMING_REPRODUCIBLE:
+            validation_outcome_value = "confirmed"
+        else:
+            validation_outcome_value = "inconclusive"
+
         return [Evidence(
             request=req,
             response=resp,
@@ -443,6 +482,21 @@ class CommandInjectionCheck(Check):
                 f"baseline={candidate['baseline_ms']:.0f}ms; "
                 f"delay={candidate['delay_ms']:.0f}ms"
             ),
+            # Wave 14 evidence fields
+            control_input=f"?{candidate.get('parameter')}=redveil_baseline",
+            baseline_timing_ms=candidate.get("baseline_ms"),
+            control_timing_ms=control_timing_ms,
+            oracle_signal="timing_delta",
+            validation_outcome=validation_outcome_value,
+            confidence="high" if verdict == TIMING_REPRODUCIBLE else "low",
+            environment_uncertainty=environment_uncertainty,
+            waf_detected=bool(result and result.waf_detected),
+            waf_indicators=waf_indicators,
+            rate_limited=bool(result and result.rate_limited),
+            rate_limit_indicators=rate_limit_indicators,
+            test_mode="safe",
+            destructive=False,
+            destructive_level=None,
         )]
 
     async def assess(self, candidate) -> Finding | None:

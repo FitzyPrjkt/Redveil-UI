@@ -6,6 +6,7 @@ OBSERVED response delay, not data exfiltration.
 """
 from __future__ import annotations
 
+import statistics
 from typing import Any
 from urllib.parse import quote, urlparse
 
@@ -298,6 +299,56 @@ class TimeBasedSQLiCheck(Check):
         ratio = (
             probe_median / baseline_median if baseline_median > 0 else 0.0
         )
+        verdict = candidate.get("verdict", INCONCLUSIVE)
+
+        # Populate Wave 14 evidence fields from the ReproducibilityResult.
+        # The mapping preserves operator-facing traceability: every
+        # environment indicator the check observed surfaces as a
+        # concrete field on the Evidence, not just prose in the
+        # observation string.
+        waf_indicators: list[str] = []
+        rate_limit_indicators: list[str] = []
+        environment_uncertainty = 0.0
+        if result is not None:
+            if result.waf_detected:
+                waf_indicators.append("probe_response_waf_pattern")
+                if resp.status_code in (403, 406, 419, 501):
+                    waf_indicators.append(f"status_{resp.status_code}")
+                if result.interference_body_length is not None:
+                    waf_indicators.append("body_length_change")
+                environment_uncertainty = max(environment_uncertainty, 0.7)
+            if result.rate_limited:
+                rate_limit_indicators.append(f"status_{resp.status_code}")
+                if resp.status_code in (429, 503):
+                    rate_limit_indicators.append("throttle_status")
+                environment_uncertainty = max(environment_uncertainty, 0.8)
+            if verdict == TIMING_FLAKY:
+                environment_uncertainty = max(environment_uncertainty, 0.6)
+            elif verdict == TIMING_ANOMALY:
+                environment_uncertainty = max(environment_uncertainty, 0.5)
+            elif verdict == TIMING_REPRODUCIBLE:
+                environment_uncertainty = max(environment_uncertainty, 0.1)
+            else:
+                environment_uncertainty = max(environment_uncertainty, 0.3)
+
+        # control_input: the legitimate request URL (baseline URL is the
+        # same endpoint without the payload).
+        control_input = (
+            f"{candidate.get('endpoint', '/')}?{candidate.get('parameter')}="
+            "redveil_baseline"
+        )
+
+        # control_timing_ms: median of the control samples if collected.
+        control_timing_ms = None
+        if result is not None and result.control_samples:
+            control_timing_ms = statistics.median(result.control_samples)
+
+        # validation_outcome: map verdict → ValidationOutcome.
+        if verdict == TIMING_REPRODUCIBLE:
+            validation_outcome = ValidationOutcome.CONFIRMED.value
+        else:
+            validation_outcome = ValidationOutcome.INCONCLUSIVE.value
+
         return [Evidence(
             request=req,
             response=resp,
@@ -311,11 +362,26 @@ class TimeBasedSQLiCheck(Check):
             relevant_headers={"content-type": resp.headers.get("content-type", "")},
             body_excerpt=resp.body_excerpt,
             observation=(
-                f"verdict={candidate.get('verdict', INCONCLUSIVE)}; "
+                f"verdict={verdict}; "
                 f"baseline={baseline_median:.0f}ms; "
                 f"probe={probe_median:.0f}ms; "
                 f"ratio={ratio:.1f}x"
             ),
+            # Wave 14 evidence fields
+            control_input=control_input,
+            baseline_timing_ms=baseline_median if baseline_median > 0 else None,
+            control_timing_ms=control_timing_ms,
+            oracle_signal=signal_kind,
+            validation_outcome=validation_outcome,
+            confidence="high" if verdict == TIMING_REPRODUCIBLE else "low",
+            environment_uncertainty=environment_uncertainty,
+            waf_detected=bool(result and result.waf_detected),
+            waf_indicators=waf_indicators,
+            rate_limited=bool(result and result.rate_limited),
+            rate_limit_indicators=rate_limit_indicators,
+            test_mode="safe",
+            destructive=False,
+            destructive_level=None,
         )]
 
     async def assess(self, candidate) -> Finding | None:
