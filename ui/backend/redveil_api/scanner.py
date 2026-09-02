@@ -351,6 +351,15 @@ class Scanner:
         # Persist findings to the DB so the UI can show them.
         await self._persist_findings(scan_id, ctx.findings, target_output_dir)
 
+        # Persist Evidence objects to disk so the Evidence Log page can
+        # surface them later. The orchestrator keeps evidence in-memory only;
+        # we serialize each Evidence as JSON in output_dir/evidence/.
+        try:
+            evidence_store = orch.evidence_store
+            await self._persist_evidence(evidence_store, target_output_dir)
+        except Exception as e:
+            log.warning("failed to persist evidence for scan %s: %s", scan_id, e)
+
         await self._put(
             queue,
             "scan.completed",
@@ -405,6 +414,30 @@ class Scanner:
                 await session.commit()
         except Exception as e:
             log.warning("failed to persist findings for scan %s: %s", scan_id, e)
+
+    async def _persist_evidence(
+        self,
+        evidence_store: dict,
+        output_dir: Path,
+    ) -> None:
+        """Write Evidence objects to ``output_dir/evidence/{EV-id}.json``.
+
+        Each evidence is serialized with ``model_dump(mode='json')`` so all
+        datetime/enum fields are JSON-friendly. The Evidence Log endpoint
+        reads these files back to render rows.
+        """
+        if not evidence_store:
+            return
+        evidence_dir = output_dir / "evidence"
+        evidence_dir.mkdir(parents=True, exist_ok=True)
+        for ev_id, ev in evidence_store.items():
+            try:
+                payload = ev.model_dump(mode="json", exclude_none=True)
+                (evidence_dir / f"{ev_id}.json").write_text(
+                    json.dumps(payload, indent=2, default=str)
+                )
+            except Exception as e:
+                log.warning("failed to serialize evidence %s: %s", ev_id, e)
 
     # ----- helpers -----
 

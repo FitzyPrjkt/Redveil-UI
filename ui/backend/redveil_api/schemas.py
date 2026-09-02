@@ -190,3 +190,133 @@ class CheckOut(BaseModel):
 
 class CheckDetailOut(CheckOut):
     """Same as CheckOut for now — kept separate so the API can grow later."""
+
+
+# --- Evidence (Wave 14 / Site Map page) -----------------------------------
+
+
+class EvidenceOut(BaseModel):
+    """Serialized Evidence record (one HTTP request/response observation)."""
+
+    id: str
+    finding_id: str | None = None
+    kind: str
+    endpoint: str
+    method: str
+    parameter: str | None = None
+    input_used: str | None = None
+    status_code: int | None = None
+    timing_ms: float | None = None
+    baseline_timing_ms: float | None = None
+    control_timing_ms: float | None = None
+    control_input: str | None = None
+    body_excerpt: str = ""
+    oracle_signal: str | None = None
+    validation_outcome: str | None = None
+    confidence: str | None = None
+    environment_uncertainty: float | None = None
+    waf_detected: bool = False
+    rate_limited: bool = False
+    check_id: str | None = None
+    timestamp: str | None = None  # ISO-8601 string
+
+
+# --- Scope (Target / Site Map page) ----------------------------------------
+
+
+class ScopeOut(BaseModel):
+    """Scope summary for a target — allowed/deny hosts and path globs."""
+
+    allowed_hosts: list[str] = Field(default_factory=list)
+    allowed_paths: list[str] = Field(default_factory=list)
+    excluded_paths: list[str] = Field(default_factory=list)
+    follow_redirects: bool = True
+    max_redirects: int = 5
+    raw_yaml: str | None = None  # original user-authored YAML, if any
+
+
+# --- Issue definitions (Target / Site Map page) ----------------------------
+
+
+class IssueDefinitionOut(BaseModel):
+    """An entry from redveil.knowledge.vuln_descriptions.
+
+    The knowledge base keys entries by ``(check_id, issue_kind)`` and many
+    aliases point at the same canonical entry. We dedupe by canonical entry
+    identity so the UI shows each issue definition exactly once.
+    """
+
+    id: str
+    name: str
+    check_id: str | None = None
+    severity: str = "info"
+    summary: str
+    cwe: list[str] = Field(default_factory=list)
+    owasp: list[str] = Field(default_factory=list)
+
+
+# --- Site map (Target / Site Map page) ------------------------------------
+
+
+class SiteMapEndpointOut(BaseModel):
+    """One endpoint row in the target site map."""
+
+    endpoint: str
+    method: str
+    finding_count: int
+    high_count: int
+    medium_count: int
+    low_count: int
+    info_count: int
+    severity_counts: dict[str, int] = Field(default_factory=dict)
+
+
+class SiteMapOut(BaseModel):
+    """Per-target site map: endpoints grouped by path prefix (folder tree)."""
+
+    target_id: int
+    target_url: str
+    endpoints: list[SiteMapEndpointOut] = Field(default_factory=list)
+    folders: list[str] = Field(default_factory=list)
+
+
+# --- Replay ----------------------------------------------------------------
+
+
+class ReplaySample(BaseModel):
+    """A single sample from a replay run — one HTTP response."""
+
+    index: int
+    status_code: int
+    elapsed_ms: float
+    body_length: int
+    body_excerpt: str = ""  # first ~200 chars, redacted
+    error: str | None = None  # timeout, connection error, etc.
+
+
+class ReplayOut(BaseModel):
+    """Result of replaying a finding's recipe against its target.
+
+    The verdict is the operator-facing summary:
+      - "Reproducible"  : is_reliable() and all samples succeeded
+      - "Flaky"          : samples succeeded but consistency signals disagree
+      - "Not verified"  : is_reliable() returned False
+    """
+
+    wpoc_id: str
+    finding_title: str
+    target_url: str | None
+    method: str
+    samples: list[ReplaySample]
+    sample_count: int
+    success_count: int
+    total_duration_ms: float
+    consistent: bool
+    status_variance: int
+    body_length_variance: int
+    body_content_match: bool
+    timing_variance_ms: float
+    reliable: bool
+    verdict: str  # "Reproducible" | "Not verified" | "Flaky"
+    notes: str = ""
+    executed_at: str  # ISO-8601 timestamp
