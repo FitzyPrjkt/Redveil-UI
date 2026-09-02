@@ -62,10 +62,18 @@ test("token-entropy page renders", async ({ page }) => {
 });
 
 test("finding detail renders", async ({ page }) => {
-  await page.goto("http://127.0.0.1:3001/findings/WPOC-1");
-  // Wait for either the data-loaded or not-found alert
+  // Resolve a real finding ID from the seeded DB
+  const resp = await page.request.get("http://127.0.0.1:8000/api/findings?limit=1");
+  const findings = (await resp.json()) as Array<{ wpoc_id: string }>;
+  if (!findings.length) {
+    test.skip(true, "no findings in DB");
+    return;
+  }
+  const wpoc = findings[0].wpoc_id;
+  await page.goto(`http://127.0.0.1:3001/findings/${wpoc}`);
+  // Wait for the title to render (data loaded) OR the not-found alert
   await page.waitForLoadState("networkidle");
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(800);
   await page.screenshot({
     path: "test-results/finding-detail.png",
     fullPage: true,
@@ -73,9 +81,17 @@ test("finding detail renders", async ({ page }) => {
 });
 
 test("replay page renders", async ({ page }) => {
-  await page.goto("http://127.0.0.1:3001/findings/WPOC-1/replay");
+  // Resolve a real finding ID from the seeded DB
+  const resp = await page.request.get("http://127.0.0.1:8000/api/findings?limit=1");
+  const findings = (await resp.json()) as Array<{ wpoc_id: string }>;
+  if (!findings.length) {
+    test.skip(true, "no findings in DB");
+    return;
+  }
+  const wpoc = findings[0].wpoc_id;
+  await page.goto(`http://127.0.0.1:3001/findings/${wpoc}/replay`);
   await page.waitForLoadState("networkidle");
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(800);
   await page.screenshot({
     path: "test-results/replay.png",
     fullPage: true,
