@@ -79,6 +79,11 @@ class SignalKind:
 
     FLAKY_ENDPOINT = "flaky_endpoint"
 
+    # Wave 5 — control/probe/replay validation pattern (control_probe.py)
+    WAF_CHALLENGE_PAGE = "waf_challenge_page"     # 403/406/429 with body-shape change
+    WAF_BLOCK_INDICATOR = "waf_block_indicator"   # challenge JS, captcha, block page
+    RATE_LIMIT_HIT = "rate_limit_hit"             # 429 + Retry-After
+
     # Dimension tags so the ConfidenceScorer can de-duplicate within dimension
     DIMENSION = {
         STATUS_DIFF: "response",
@@ -106,4 +111,8 @@ class SignalKind:
         ADMIN_ENDPOINT_ACCESSIBLE: "behavior",
         # Wave 4 — flakiness signal
         FLAKY_ENDPOINT: "replay",
+        # Wave 5 — control/probe/replay validation pattern
+        WAF_CHALLENGE_PAGE: "response",
+        WAF_BLOCK_INDICATOR: "response",
+        RATE_LIMIT_HIT: "response",
     }

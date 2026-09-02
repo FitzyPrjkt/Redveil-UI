@@ -10,6 +10,14 @@ ABSOLUTELY FORBIDDEN payloads (anywhere in this file or its tests):
 - Writing files: >, >>, tee, dd of=
 - Reverse shells: /dev/tcp, bash -i, python -c '...'
 - Disk wiping: dd if=/dev/zero, mkfs, fdisk
+
+Validation pattern: control + probe + replay.
+Every (parameter, payload) pair is validated with the
+``run_control_probe_sequence`` helper, which performs::
+    BASELINE × N → CONTROL → PROBE × N → CONTROL → PROBE × N
+The combined verdict is mapped to a ValidationOutcome and a
+confidence level, and the signals feed the ConfidenceScorer in
+``assess()``.
 """
 from __future__ import annotations
 
@@ -23,6 +31,7 @@ from redveil.findings.confidence import Confidence
 from redveil.findings.finding import CheckRef, Finding, FindingStatus, TargetRef
 from redveil.findings.severity import Severity
 from redveil.http.request import Request
+from redveil.http.response import Response
 from redveil.knowledge.vuln_descriptions import get_entry
 from redveil.plugins.base import (
     Check,
@@ -32,6 +41,19 @@ from redveil.plugins.base import (
     ValidationResult,
 )
 from redveil.util.urls import join_url
+from redveil.validation.confidence import ConfidenceScorer
+from redveil.validation.control_probe import (
+    INCONCLUSIVE,
+    RATE_LIMITED,
+    ReproducibilityResult,
+    TIMING_ANOMALY,
+    TIMING_FLAKY,
+    TIMING_REPRODUCIBLE,
+    WAF_INTERFERENCE,
+    reason_for_verdict,
+    run_control_probe_sequence,
+)
+from redveil.validation.oracle import Oracle, Signal
 
 # ONLY safe sleep-based payloads. NO destructive commands.
 # Each payload is just a sleep call with a separator, capped at 3 seconds.
@@ -64,6 +86,104 @@ _COMMON_PARAM_NAMES = [
     "target", "addr", "address", "domain", "file", "path", "url",
 ]
 
+# Control+probe+replay sampling budgets.
+# Per (param, payload) pair: 3 baseline + 1 control + 2 probe + 1 control
+# + 2 probe = 9 requests (two rounds, early-exit on WAF / rate-limit).
+_N_BASELINE = 3
+_N_PROBE = 2
+# Worst case: 7 payloads × 17 params × 10 (per-pair upper bound) = 1190.
+# The helper exits early on WAF/rate-limit and the outer loop breaks
+# after a reproducible per-param match, so the realistic count is far
+# lower, but the plan declares the full worst case.
+_MAX_REQUESTS = 1190
+
+# Per-payload separator extraction (preserved from the pre-control/probe
+# implementation). Pure string detection on the payload — no destructive
+# parsing, no execution.
+_SEPARATOR_MAP: tuple[tuple[str, str], ...] = (
+    ("`", "backtick"),
+    ("$(", "$()"),
+    ("&&", "&&"),
+    ("||", "||"),
+    (";", ";"),
+    ("|", "|"),
+    ("&", "&"),
+)
+
+
+def _detect_separator(payload: str) -> str:
+    """Return the canonical name of the shell separator in ``payload``.
+
+    Mirrors the pre-control/probe logic — pure substring match in a
+    fixed order, so each payload maps to exactly one separator.
+    """
+    for marker, name in _SEPARATOR_MAP:
+        if marker in payload:
+            return name
+    return "unknown"
+
+
+def _outcome_for_verdict(verdict: str) -> tuple[ValidationOutcome, str]:
+    """Map a ``ReproducibilityResult.verdict`` to a ``ValidationOutcome``
+    + confidence string.
+
+    - TIMING_REPRODUCIBLE -> CONFIRMED + high
+    - WAF_INTERFERENCE   -> INCONCLUSIVE + medium (WAF block is evidence
+      of a security boundary, not proof of a vulnerability)
+    - RATE_LIMITED       -> INCONCLUSIVE + medium
+    - TIMING_FLAKY       -> INCONCLUSIVE + low
+    - TIMING_ANOMALY     -> INCONCLUSIVE + low
+    - INCONCLUSIVE       -> INCONCLUSIVE + low
+    """
+    if verdict == TIMING_REPRODUCIBLE:
+        return ValidationOutcome.CONFIRMED, "high"
+    if verdict == WAF_INTERFERENCE:
+        return ValidationOutcome.INCONCLUSIVE, "medium"
+    if verdict == RATE_LIMITED:
+        return ValidationOutcome.INCONCLUSIVE, "medium"
+    if verdict == TIMING_FLAKY:
+        return ValidationOutcome.INCONCLUSIVE, "low"
+    if verdict == TIMING_ANOMALY:
+        return ValidationOutcome.INCONCLUSIVE, "low"
+    return ValidationOutcome.INCONCLUSIVE, "low"
+
+
+def _build_signals(result: ReproducibilityResult) -> list[Signal]:
+    """Build Signal objects from a ``ReproducibilityResult``.
+
+    Each signal records one observable dimension of evidence. The
+    ConfidenceScorer de-duplicates within a dimension so multiple
+    signals on the same dimension don't inflate confidence.
+    """
+    signals: list[Signal] = []
+    verdict = result.verdict
+    if verdict == TIMING_REPRODUCIBLE:
+        signals.append(Signal(
+            kind="timing_delta",
+            description=(
+                f"probe median {result.probe_median_ms:.0f}ms vs "
+                f"baseline {result.baseline_median_ms:.0f}ms "
+                f"(cv {result.baseline_cv_pct:.1f}%)"
+            ),
+            weight=0.7,
+            dimension="response",
+        ))
+    if result.waf_detected or verdict == WAF_INTERFERENCE:
+        signals.append(Signal(
+            kind="waf_challenge_page",
+            description="WAF returned a 403/406/419/501 challenge or block page",
+            weight=0.9,
+            dimension="response",
+        ))
+    if result.rate_limited or verdict == RATE_LIMITED:
+        signals.append(Signal(
+            kind="rate_limit_hit",
+            description="rate-limited (429/503 or Retry-After header)",
+            weight=0.9,
+            dimension="response",
+        ))
+    return signals
+
 
 class CommandInjectionCheck(Check):
     meta = CheckMeta(
@@ -74,17 +194,6 @@ class CommandInjectionCheck(Check):
         description="Detects command injection via time-based observation using only `sleep` payloads. No destructive commands.",
         references=["CWE-78", "OWASP A03:2021"],
     )
-
-    async def _measure_baseline(self, url: str, param: str) -> float:
-        samples: list[float] = []
-        for _ in range(2):
-            try:
-                req = Request(method="GET", url=f"{url}?{param}=redveil_baseline", purpose="baseline")
-                resp = await self.deps.http.send(req)
-                samples.append(resp.elapsed_ms)
-            except Exception:
-                pass
-        return statistics.median(samples) if samples else 0.0
 
     async def discover(self, ctx) -> list[dict[str, Any]]:
         if not self.deps:
@@ -123,7 +232,12 @@ class CommandInjectionCheck(Check):
                 "May trigger WAF if present.",
                 "Slight increase in response time for affected requests.",
             ),
-            max_requests=len(_DELAY_PAYLOADS) * len(_COMMON_PARAM_NAMES),
+            # Worst-case request budget for the control+probe+replay
+            # pattern: 7 payloads × 17 params × 10 (per-pair upper
+            # bound) = 1190. The helper exits early on WAF/rate-limit
+            # and the outer loop breaks after a reproducible per-param
+            # match, so the realistic count is far lower.
+            max_requests=_MAX_REQUESTS,
             timeout_seconds=10.0,
             destructive=False,
         )
@@ -140,58 +254,171 @@ class CommandInjectionCheck(Check):
         candidates: list[dict[str, Any]] = []
         endpoint = join_url(base, "/")
 
+        # Per (param, payload) pair, run the control+probe+replay sequence.
+        # Early-break after the first reproducible per-param match — one
+        # confirmed CMDi per parameter is enough evidence.
         for param in _COMMON_PARAM_NAMES:
-            try:
-                baseline_ms = await self._measure_baseline(endpoint, param)
-            except Exception:
-                continue
-            if baseline_ms <= 0:
-                continue
-
             for payload in _DELAY_PAYLOADS:
-                try:
-                    test_url = f"{endpoint}?{param}={quote(payload, safe='')}"
-                    req = Request(method="GET", url=test_url, purpose="probe", purpose_extra="cmdi_sleep")
+                baseline_url = endpoint
+                probe_url = f"{endpoint}?{param}={quote(payload, safe='')}"
+                control_url = f"{endpoint}?{param}=redveil_baseline"
+
+                # The helper's RequestFn is a closure that captures
+                # the URLs and tracks the last probe response so we
+                # can attach it to the candidate for evidence.
+                last_probe_response: list[Response] = []
+
+                async def request_fn(url: str, _purl: str = probe_url) -> Response:
+                    req = Request(
+                        method="GET",
+                        url=url,
+                        purpose="probe",
+                        purpose_extra="cmdi_sleep",
+                    )
                     resp = await self.deps.http.send(req)
+                    if url == _purl:
+                        last_probe_response.append(resp)
+                    return resp
+
+                try:
+                    result: ReproducibilityResult = await run_control_probe_sequence(
+                        baseline_url=baseline_url,
+                        probe_url=probe_url,
+                        control_url=control_url,
+                        request_fn=request_fn,
+                        n_baseline=_N_BASELINE,
+                        n_probe=_N_PROBE,
+                    )
                 except Exception:
                     continue
-                delay_ms = resp.elapsed_ms
-                if delay_ms <= 0:
+
+                # Decide whether this (param, payload) result is
+                # meaningful enough to attach a candidate to.
+                # - TIMING_FLAKY: baseline unstable for this endpoint;
+                #   abandon the whole param (other payloads will see the
+                #   same noise).
+                # - INCONCLUSIVE with no probe samples: control drift or
+                #   network failure; abandon the whole param.
+                # - INCONCLUSIVE with probe samples but no delay: no
+                #   timing signal at all; skip without adding a candidate
+                #   (try the next payload).
+                # - TIMING_REPRODUCIBLE / WAF_INTERFERENCE /
+                #   RATE_LIMITED: add a candidate, break to the next
+                #   parameter (one confirmed-or-blocked finding per
+                #   parameter is enough evidence).
+                # - TIMING_ANOMALY: add a candidate (anomalies are
+                #   evidence) but keep trying payloads in case a
+                #   different separator produces a reproducible delay.
+                if result.verdict == TIMING_FLAKY:
+                    break
+                if result.verdict == INCONCLUSIVE and not result.probe_samples:
+                    break
+                if result.verdict == INCONCLUSIVE:
+                    # Probe ran but no meaningful timing delta. Skip.
                     continue
-                if delay_ms >= baseline_ms + 2000 and delay_ms >= baseline_ms * 3:
-                    # Identify separator
-                    separator = (
-                        "backtick" if "`" in payload
-                        else "$()" if "$(" in payload
-                        else "&&" if "&&" in payload
-                        else "||" if "||" in payload
-                        else ";" if ";" in payload
-                        else "|" if "|" in payload
-                        else "&" if "&" in payload
-                        else "unknown"
-                    )
-                    candidates.append({
-                        "endpoint": "/",
-                        "parameter": param,
-                        "method": "GET",
-                        "payload": payload,
-                        "separator": separator,
-                        "baseline_ms": baseline_ms,
-                        "delay_ms": delay_ms,
-                        "ratio": delay_ms / max(baseline_ms, 1.0),
-                        "request": req,
-                        "response": resp,
-                    })
-                    # One delay per param is enough evidence — stop testing this param
+
+                # Build a synthetic request for the evidence record.
+                # The response (if captured) is the real last-probe
+                # response, which carries the observed status/body.
+                evidence_req = Request(
+                    method="GET",
+                    url=probe_url,
+                    purpose="probe",
+                    purpose_extra="cmdi_sleep",
+                )
+
+                # Probe median (or 0 if no probes collected) drives
+                # the candidate's delay_ms/ratio for the legacy shape.
+                probe_median = (
+                    statistics.median(result.probe_samples)
+                    if result.probe_samples
+                    else 0.0
+                )
+                ratio = probe_median / max(result.baseline_median_ms, 1.0)
+
+                last_resp = last_probe_response[-1] if last_probe_response else None
+
+                candidates.append({
+                    "endpoint": "/",
+                    "parameter": param,
+                    "method": "GET",
+                    "payload": payload,
+                    "separator": _detect_separator(payload),
+                    "baseline_ms": result.baseline_median_ms,
+                    "delay_ms": probe_median,
+                    "ratio": ratio,
+                    "request": evidence_req,
+                    "response": last_resp,
+                    "reproducibility": result,
+                    "verdict": result.verdict,
+                })
+
+                # Early-break after a reproducible finding per param:
+                # one confirmed CMDi per parameter is enough evidence.
+                # WAF and rate-limit verdicts also short-circuit — if
+                # the WAF blocks the first probe, further payloads are
+                # unlikely to produce different signal.
+                if result.verdict in (
+                    TIMING_REPRODUCIBLE,
+                    WAF_INTERFERENCE,
+                    RATE_LIMITED,
+                ):
                     break
 
         return candidates
 
     async def validate(self, ctx, candidate) -> ValidationResult:
+        # The verdict is set by discover() from the
+        # ``run_control_probe_sequence`` result. Map it to a
+        # ValidationOutcome + confidence string.
+        result: ReproducibilityResult | None = candidate.get("reproducibility")
+        if result is None:
+            # Backwards-compatibility: legacy candidates (from
+            # earlier scans or fixtures) only carry baseline/delay/ratio.
+            ratio = candidate.get("ratio", 0)
+            delay = candidate.get("delay_ms", 0)
+            baseline = candidate.get("baseline_ms", 0)
+            if ratio >= 3 and delay >= 2000:
+                return ValidationResult(
+                    outcome=ValidationOutcome.CONFIRMED,
+                    confidence="high",
+                    observation=(
+                        f"baseline={baseline:.0f}ms; delay={delay:.0f}ms; "
+                        f"ratio={ratio:.1f}x — strong indicator"
+                    ),
+                )
+            if ratio >= 2 and delay >= 1500:
+                return ValidationResult(
+                    outcome=ValidationOutcome.LIKELY,
+                    confidence="medium",
+                    observation=(
+                        f"baseline={baseline:.0f}ms; delay={delay:.0f}ms; "
+                        f"ratio={ratio:.1f}x"
+                    ),
+                )
+            return ValidationResult(
+                outcome=ValidationOutcome.FALSE_POSITIVE,
+                confidence="low",
+                observation="delay below threshold",
+            )
+
+        outcome, confidence = _outcome_for_verdict(result.verdict)
+        probe_median = (
+            statistics.median(result.probe_samples)
+            if result.probe_samples
+            else 0.0
+        )
+        observation = (
+            f"verdict={result.verdict}; "
+            f"baseline={result.baseline_median_ms:.0f}ms; "
+            f"probe_median={probe_median:.0f}ms; "
+            f"cv={result.baseline_cv_pct:.1f}%; "
+            f"{result.notes}"
+        )
         return ValidationResult(
-            outcome=ValidationOutcome.CONFIRMED,
-            confidence="high",
-            observation=f"baseline={candidate['baseline_ms']:.0f}ms; delay={candidate['delay_ms']:.0f}ms; ratio={candidate['ratio']:.1f}x — strong indicator",
+            outcome=outcome,
+            confidence=confidence,
+            observation=observation,
         )
 
     async def collect_evidence(self, candidate) -> list[Evidence]:
@@ -211,7 +438,11 @@ class CommandInjectionCheck(Check):
             timing_ms=resp.elapsed_ms,
             relevant_headers={"content-type": resp.headers.get("content-type", "")},
             body_excerpt=resp.body_excerpt,
-            observation=f"time-based cmdi via '{candidate['separator']}' separator; baseline={candidate['baseline_ms']:.0f}ms; delay={candidate['delay_ms']:.0f}ms",
+            observation=(
+                f"time-based cmdi via '{candidate['separator']}' separator; "
+                f"baseline={candidate['baseline_ms']:.0f}ms; "
+                f"delay={candidate['delay_ms']:.0f}ms"
+            ),
         )]
 
     async def assess(self, candidate) -> Finding | None:
@@ -231,14 +462,43 @@ class CommandInjectionCheck(Check):
             attack_scenario = None
             code_examples = {}
 
+        # ConfidenceScorer replaces the hard-coded Confidence.HIGH.
+        # We use Oracle.STATE_TRANSITION because a reproducible
+        # time-based CMDi demonstrates a state change (the server
+        # spent real time waiting for the sleep), and we feed the
+        # scorer the signals derived from the ReproducibilityResult.
+        result: ReproducibilityResult | None = candidate.get("reproducibility")
+        verdict = candidate.get("verdict", INCONCLUSIVE)
+        if result is not None:
+            signals = _build_signals(result)
+            scorer = ConfidenceScorer(environmental_penalty=0.0)
+            confidence = scorer.confidence(signals, Oracle.STATE_TRANSITION)
+        else:
+            # Legacy candidate path: keep the historical HIGH confidence.
+            confidence = Confidence.HIGH
+
+        # Status mirrors validate()'s verdict mapping: only a reproducible
+        # timing pattern is CONFIRMED. WAF / rate-limit / flaky / anomaly /
+        # generic-INCONCLUSIVE verdicts produce INCONCLUSIVE findings so the
+        # UI can render the specific cause rather than a false-positive
+        # CONFIRMED badge.
+        if verdict == TIMING_REPRODUCIBLE:
+            status = FindingStatus.CONFIRMED
+        else:
+            status = FindingStatus.INCONCLUSIVE
+            technical = (
+                f"{technical}\n\n"
+                f"Inconclusive reason: {reason_for_verdict(verdict)}"
+            )
+
         base = str(self.deps.config.target.base_url)
         parsed = urlparse(base)
         return Finding(
             check=CheckRef(id=self.meta.id, name=self.meta.name, category=self.meta.category.value, version=self.meta.version),
             title=f"Command Injection via '{candidate['parameter']}' Parameter (Time-Based)",
             severity=Severity.CRITICAL,
-            confidence=Confidence.HIGH,
-            status=FindingStatus.CONFIRMED,
+            confidence=confidence,
+            status=status,
             target=TargetRef(
                 host=parsed.hostname or "",
                 port=parsed.port,
