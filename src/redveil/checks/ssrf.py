@@ -455,6 +455,23 @@ class SSRFCheck(Check):
         for k, v in resp.headers.items():
             if k.lower() in {"location", "refresh", "content-type"}:
                 relevant_headers[k] = v
+        # Wave 14: classify the indicator's strength to drive the
+        # environment_uncertainty score. "successful_fetch" is the
+        # strongest (response mirrors OOB content), "redirect" needs
+        # Location-header verification, "body_reference" is weakest
+        # (could just be reflection of input).
+        if indicator == "successful_fetch":
+            uncertainty = 0.2
+        elif indicator == "redirect":
+            uncertainty = 0.4
+        elif indicator == "body_reference":
+            uncertainty = 0.6
+        else:
+            uncertainty = 0.3
+        waf_detected = resp.status_code in (403, 406, 419, 501)
+        rate_limited = resp.status_code in (429, 503)
+        if waf_detected or rate_limited:
+            uncertainty = max(uncertainty, 0.7)
         return [Evidence(
             request=req,
             response=resp,
@@ -471,6 +488,16 @@ class SSRFCheck(Check):
                 f"check OOB logs for canary={candidate.get('canary')} on "
                 f"domain {candidate.get('oob_domain')} to confirm"
             ),
+            # Wave 14 evidence fields
+            oracle_signal="oob_callback",
+            validation_outcome="likely",
+            confidence="medium",
+            environment_uncertainty=uncertainty,
+            waf_detected=waf_detected,
+            rate_limited=rate_limited,
+            test_mode="active",
+            destructive=False,
+            destructive_level=None,
         )]
 
     async def assess(self, candidate) -> Finding | None:
