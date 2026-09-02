@@ -81,19 +81,28 @@ async def test_no_reflection_no_finding():
 
 
 @pytest.mark.asyncio
-async def test_validate_confirmed_for_unescaped():
+async def test_validate_likely_for_unescaped_in_unknown_context():
+    """Without context info, raw reflection defaults to LIKELY (conservative).
+
+    The check is now context-aware. Without a context field, the
+    validator can't know whether the reflection is in an exploitable
+    context (attribute / script / URL) or plain HTML text, so it
+    defaults to LIKELY rather than over-confirming. Spec-mandated
+    context classification tests follow.
+    """
     check = ReflectedXSSCheck()
     candidate = {"parameter": "q", "canary": "abc", "reflected_count": 3, "escaped": False}
     result = await check.validate(MagicMock(), candidate)
-    assert result.outcome.value == "confirmed"
+    assert result.outcome.value == "likely"
 
 
 @pytest.mark.asyncio
-async def test_validate_likely_for_escaped():
+async def test_validate_false_positive_for_safely_encoded():
+    """Spec: a safely-encoded reflection does NOT become a finding."""
     check = ReflectedXSSCheck()
     candidate = {"parameter": "q", "canary": "abc", "reflected_count": 1, "escaped": True}
     result = await check.validate(MagicMock(), candidate)
-    assert result.outcome.value == "likely"
+    assert result.outcome.value == "false_positive"
 
 
 @pytest.mark.asyncio
