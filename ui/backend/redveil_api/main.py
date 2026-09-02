@@ -15,7 +15,17 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from redveil_api.db import DATA_DIR, Base, get_engine
-from redveil_api.routes import checks, findings, lab, scans, targets
+from redveil_api.routes import (
+    checks,
+    config,
+    entropy,
+    findings,
+    issue_definitions,
+    lab,
+    scans,
+    scope,
+    targets,
+)
 from redveil_api.scanner import Scanner
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s | %(message)s")
@@ -96,3 +106,7 @@ app.include_router(scans.router, prefix="/api/scans", tags=["scans"])
 app.include_router(findings.router, prefix="/api/findings", tags=["findings"])
 app.include_router(checks.router, prefix="/api/checks", tags=["checks"])
 app.include_router(lab.router, prefix="/api/lab", tags=["lab"])
+app.include_router(config.router, prefix="/api/config", tags=["config"])
+app.include_router(scope.router, prefix="/api", tags=["scope"])
+app.include_router(issue_definitions.router, prefix="/api", tags=["issue-definitions"])
+app.include_router(entropy.router, prefix="/api/entropy", tags=["entropy"])
