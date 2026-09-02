@@ -64,6 +64,8 @@ def _build_config(
     profile: str,
     max_requests: int | None,
     rps: float | None,
+    max_destructive_level: str = "L2",
+    allow_destructive: bool = False,
 ) -> RedVeilConfig:
     """Construct a RedVeilConfig from UI-friendly kwargs.
 
@@ -106,11 +108,18 @@ def _build_config(
     if rps is not None:
         limits.requests_per_second = rps
 
+    # AuthorizationConfig already accepts both "L1".."L6" and "1".."6" via
+    # its own validator and normalizes to int. We can pass the string through.
+    authorization = AuthorizationConfig(
+        allow_destructive=allow_destructive,
+        max_destructive_level=max_destructive_level,
+    )
+
     return RedVeilConfig(
         target=TargetConfig(base_url=target_url, name=target_name),
         scope=ScopeConfig(**scope_cfg),
         limits=limits,
-        authorization=AuthorizationConfig(),
+        authorization=authorization,
         auth=AuthConfig(),
         reporting=ReportingConfig(
             output_dir=OUTPUT_BASE_DIR,
@@ -176,6 +185,9 @@ class Scanner:
         profile: str,
         scan_id: int,
         target_name: str | None = None,
+        max_destructive_level: str = "L2",
+        allow_destructive: bool = False,
+        gate_mode: str = "non_interactive",
     ) -> AsyncIterator[dict[str, Any]]:
         """Async-iterator wrapper around a single scan run.
 
@@ -193,6 +205,9 @@ class Scanner:
                 profile=profile,
                 scan_id=scan_id,
                 target_name=target_name,
+                max_destructive_level=max_destructive_level,
+                allow_destructive=allow_destructive,
+                gate_mode=gate_mode,
             )
         )
         try:
@@ -237,6 +252,9 @@ class Scanner:
         profile: str,
         scan_id: int,
         target_name: str | None,
+        max_destructive_level: str = "L2",
+        allow_destructive: bool = False,
+        gate_mode: str = "non_interactive",
     ) -> None:
         """Build the redveil stack, hook events, run the scan."""
         try:
@@ -247,6 +265,8 @@ class Scanner:
                 profile=profile,
                 max_requests=None,
                 rps=None,
+                max_destructive_level=max_destructive_level,
+                allow_destructive=allow_destructive,
             )
         except Exception as e:
             await self._put(
@@ -261,6 +281,21 @@ class Scanner:
         target_output_dir = self._output_base_dir / f"scan-{scan_id}-{safe_name}"
         cfg.reporting.output_dir = target_output_dir
 
+        # TODO: wire gate_mode into Orchestrator instantiation.
+        # The Orchestrator instantiates its ActionGate internally today; for
+        # now we just record the requested mode in the scan.started payload
+        # so the operator's choice is visible in the SSE stream. Future
+        # work: extend Orchestrator/OrchestratorDeps to accept a GateMode
+        # and inject a pre-built ActionGate.
+        log.info(
+            "scan %s: gate_mode=%s, max_destructive_level=%s, allow_destructive=%s "
+            "(gate_mode not yet wired to orchestrator)",
+            scan_id,
+            gate_mode,
+            max_destructive_level,
+            allow_destructive,
+        )
+
         await self._put(
             queue,
             "scan.started",
@@ -268,6 +303,9 @@ class Scanner:
                 "scan_id": scan_id,
                 "target_url": target_url,
                 "profile": profile,
+                "max_destructive_level": max_destructive_level,
+                "allow_destructive": allow_destructive,
+                "gate_mode": gate_mode,
                 "output_dir": str(target_output_dir),
                 "started_at": datetime.now(UTC).isoformat(),
             },

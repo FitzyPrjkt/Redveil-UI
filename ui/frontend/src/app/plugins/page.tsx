@@ -81,6 +81,14 @@ const PROFILE_LABEL: Record<SafetyProfile, string> = {
   active: "active",
 };
 
+const RISK_COLORS: Record<string, string> = {
+  none: "bg-zinc-800 text-zinc-400",
+  low: "bg-yellow-500/15 text-yellow-300",
+  medium: "bg-orange-500/15 text-orange-300",
+  high: "bg-red-500/15 text-red-300",
+  blocked: "bg-red-900/30 text-red-200",
+};
+
 const FILTERS: { value: FilterValue; label: string }[] = [
   { value: "all", label: "All" },
   { value: "passive", label: "Passive" },
@@ -88,16 +96,33 @@ const FILTERS: { value: FilterValue; label: string }[] = [
   { value: "active", label: "Active" },
 ];
 
-function ProfileBadge({ profile }: { profile: SafetyProfile }) {
+function ProfileBadge({
+  profile,
+  maxRisk,
+}: {
+  profile: SafetyProfile;
+  maxRisk: string;
+}) {
   return (
-    <span
-      className={cn(
-        "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium tracking-wide",
-        PROFILE_STYLES[profile],
-      )}
-    >
-      {PROFILE_LABEL[profile]}
-    </span>
+    <div className="flex flex-col items-end gap-1 shrink-0">
+      <span
+        className={cn(
+          "rounded-full px-2 py-0.5 text-xs font-medium",
+          PROFILE_STYLES[profile] ?? "bg-zinc-800 text-zinc-400",
+        )}
+      >
+        {PROFILE_LABEL[profile] ?? profile}
+      </span>
+      <span
+        className={cn(
+          "rounded-full px-2 py-0.5 text-[10px] font-mono",
+          RISK_COLORS[maxRisk] ?? "bg-zinc-800 text-zinc-400",
+        )}
+        title="Max risk level this check can reach"
+      >
+        risk: {maxRisk}
+      </span>
+    </div>
   );
 }
 
@@ -109,11 +134,14 @@ function CheckCard({ check }: { check: CheckOut }) {
       className="flex h-full flex-col items-start justify-between gap-6 rounded-xl border border-zinc-800 bg-zinc-900 p-5"
     >
       <Icon className="size-7 shrink-0 text-zinc-500" aria-hidden="true" />
-      <div className="flex flex-col items-start gap-2">
+      <div className="flex w-full items-start justify-between gap-3">
         <code className="font-mono text-sm font-medium text-zinc-100">
           {check.id}
         </code>
-        <ProfileBadge profile={check.safety_profile} />
+        <ProfileBadge
+          profile={check.safety_profile}
+          maxRisk={check.max_risk ?? "none"}
+        />
       </div>
     </Card>
   );

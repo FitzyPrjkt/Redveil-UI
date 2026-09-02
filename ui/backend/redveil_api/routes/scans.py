@@ -48,6 +48,9 @@ async def create_scan(
         scan_type="standard",
         output_dir=None,
         total_requests=0,
+        max_destructive_level=body.max_destructive_level,
+        allow_destructive=body.allow_destructive,
+        gate_mode=body.gate_mode,
     )
     session.add(scan)
     await session.commit()
@@ -65,6 +68,9 @@ async def create_scan(
             target_name=target.name,
             scope_yaml=scope_yaml,
             profile=body.profile,
+            max_destructive_level=body.max_destructive_level,
+            allow_destructive=body.allow_destructive,
+            gate_mode=body.gate_mode,
         )
     )
 
@@ -85,6 +91,9 @@ async def _drive_scan(
     target_name: str | None,
     scope_yaml: str | None,
     profile: str,
+    max_destructive_level: str = "L2",
+    allow_destructive: bool = False,
+    gate_mode: str = "non_interactive",
 ) -> None:
     """Background task: update Scan row as the orchestrator runs."""
     from redveil_api.db import get_session_factory
@@ -108,6 +117,9 @@ async def _drive_scan(
             profile=profile,
             scan_id=scan_id,
             target_name=target_name,
+            max_destructive_level=max_destructive_level,
+            allow_destructive=allow_destructive,
+            gate_mode=gate_mode,
         ):
             last_event = event
             if event.get("event") == "scan.started":

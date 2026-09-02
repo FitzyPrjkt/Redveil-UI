@@ -77,3 +77,52 @@ test("plugins page renders with checks", async ({ page }) => {
     fullPage: true,
   });
 });
+
+test("new scan form renders all destructive-level fields", async ({ page }) => {
+  await page.goto("http://127.0.0.1:3001/targets/new");
+  await expect(page.getByRole("heading", { name: "New Scan" })).toBeVisible();
+
+  // URL field is required and present
+  await expect(page.getByTestId("scan-url")).toBeVisible();
+
+  // Profile radio group has all three options
+  await expect(page.getByTestId("scan-url")).toBeVisible();
+  await expect(page.getByText("passive", { exact: true })).toBeVisible();
+  await expect(page.getByText("low_impact", { exact: true })).toBeVisible();
+  await expect(page.getByText("active", { exact: true })).toBeVisible();
+
+  // Destructive level dropdown is present with default L2
+  const levelSelect = page.getByTestId("scan-level");
+  await expect(levelSelect).toBeVisible();
+  await expect(levelSelect).toHaveValue("L2");
+
+  // Allow destructive checkbox is unchecked by default
+  const allowDestructive = page.getByTestId("scan-allow-destructive");
+  await expect(allowDestructive).toBeVisible();
+  await expect(allowDestructive).not.toBeChecked();
+
+  // No destructive warning is shown by default
+  await expect(
+    page.getByText("Findings pada level ini"),
+  ).not.toBeVisible();
+
+  // Gate mode dropdown defaults to non_interactive
+  const gateSelect = page.getByTestId("scan-gate-mode");
+  await expect(gateSelect).toBeVisible();
+  await expect(gateSelect).toHaveValue("non_interactive");
+
+  // Max requests input is present
+  await expect(page.getByTestId("scan-max-requests")).toBeVisible();
+
+  // Toggling allow destructive reveals the warning
+  await allowDestructive.check();
+  await expect(
+    page.getByText("Findings pada level ini"),
+  ).toBeVisible();
+
+  // Screenshot for visual reference
+  await page.screenshot({
+    path: "test-results/new-scan.png",
+    fullPage: true,
+  });
+});

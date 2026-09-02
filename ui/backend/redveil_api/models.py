@@ -49,6 +49,14 @@ class Scan(Base):
     output_dir: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     total_requests: Mapped[int] = mapped_column(default=0, nullable=False)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Wave 3 follow-up: destructive level + gate mode
+    max_destructive_level: Mapped[str] = mapped_column(
+        String(4), nullable=False, default="L2"
+    )
+    allow_destructive: Mapped[bool] = mapped_column(default=False, nullable=False)
+    gate_mode: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="non_interactive"
+    )
 
     target: Mapped[Target] = relationship("Target", back_populates="scans")
     findings: Mapped[list["Finding"]] = relationship(
