@@ -8,6 +8,7 @@ import {
   IconTarget,
   IconHistory,
   IconPuzzle,
+  IconSettings,
   IconShieldCheck,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
@@ -23,6 +24,7 @@ const navItems: NavItem[] = [
   { label: "Targets", href: "/targets", icon: IconTarget },
   { label: "Scan History", href: "/scans", icon: IconHistory },
   { label: "Plugins", href: "/plugins", icon: IconPuzzle },
+  { label: "Settings", href: "/settings", icon: IconSettings },
 ];
 
 export function Sidebar() {
