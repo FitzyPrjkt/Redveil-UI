@@ -73,6 +73,8 @@ async def test_different_status_detected():
 
 @pytest.mark.asyncio
 async def test_assess_produces_finding():
+    """Status transition 404 → 200 with canary file is the strongest
+    traversal signal — produces a HIGH-severity CONFIRMED finding."""
     check = PathTraversalCheck()
     _bind(check, [_resp()])
     candidate = {
@@ -80,12 +82,13 @@ async def test_assess_produces_finding():
         "payload": "../redveil_canary_abc123.txt", "canary": "redveil_canary_abc123.txt",
         "baseline_status": 404, "baseline_length": 9,
         "canary_status": 200, "canary_length": 100,
-        "behavior": "different_status",
+        "behavior": "status_transition_404_to_200",
         "request": MagicMock(url="https://example.com/?file=../redveil_canary_abc123.txt"),
     }
     f = await check.assess(candidate)
     assert f is not None
     assert f.severity.value == "high"
+    assert f.status.value == "confirmed"
     assert "CWE-22" in f.cwe
 
 
