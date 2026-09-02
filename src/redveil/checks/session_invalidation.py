@@ -159,6 +159,14 @@ class SessionInvalidationCheck(Check):
         resp = candidate.get("response")
         if not req or not resp:
             return []
+        # Wave 14: detect WAF/rate-limit on the post-logout probe
+        # (could indicate the logout endpoint was blocked, not that
+        # the session was leaked).
+        waf_detected = resp.status_code in (403, 406, 419, 501)
+        rate_limited = resp.status_code in (429, 503)
+        environment_uncertainty = 0.0
+        if waf_detected or rate_limited:
+            environment_uncertainty = 0.7
         return [Evidence(
             request=req,
             response=resp,
@@ -171,6 +179,16 @@ class SessionInvalidationCheck(Check):
             relevant_headers={"content-type": resp.headers.get("content-type", "")},
             body_excerpt=resp.body_excerpt,
             observation=f"cookies still valid after logout; status {resp.status_code}",
+            # Wave 14 evidence fields
+            oracle_signal="state_transition",
+            validation_outcome="inconclusive" if (waf_detected or rate_limited) else "confirmed",
+            confidence="high",
+            environment_uncertainty=environment_uncertainty,
+            waf_detected=waf_detected,
+            rate_limited=rate_limited,
+            test_mode="active",
+            destructive=False,
+            destructive_level=None,
         )]
 
     async def assess(self, candidate) -> Finding | None:
