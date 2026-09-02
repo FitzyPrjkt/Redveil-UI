@@ -172,6 +172,17 @@ class BFLABehaviorCheck(Check):
         resp = candidate.get("response")
         if not req or not resp:
             return []
+        # Wave 14: WAF / rate-limit bumps uncertainty for the same
+        # reason as BFLA — the response differential could come from
+        # intermediary rewriting, not from real role differential.
+        waf_detected = resp.status_code in (403, 406, 419, 501)
+        rate_limited = resp.status_code in (429, 503)
+        if waf_detected:
+            uncertainty = 0.7
+        elif rate_limited:
+            uncertainty = 0.8
+        else:
+            uncertainty = 0.2
         return [Evidence(
             request=req,
             response=resp,
@@ -184,6 +195,16 @@ class BFLABehaviorCheck(Check):
             relevant_headers={"content-type": resp.headers.get("content-type", "")},
             body_excerpt=resp.body_excerpt,
             observation=f"non-admin {candidate.get('principal', '?')} got {resp.status_code} on admin endpoint {candidate['endpoint']}",
+            # Wave 14 evidence fields
+            oracle_signal="state_transition",
+            validation_outcome="inconclusive" if waf_detected or rate_limited else "likely",
+            confidence="low" if waf_detected or rate_limited else "medium",
+            environment_uncertainty=uncertainty,
+            waf_detected=waf_detected,
+            rate_limited=rate_limited,
+            test_mode="active",
+            destructive=False,
+            destructive_level=None,
         )]
 
     async def assess(self, candidate) -> Finding | None:

@@ -583,6 +583,23 @@ class BOLACheck(Check):
 
         req_a = candidate.get("request_a")
         resp_a = candidate.get("response_a")
+        req_b = candidate.get("request_b")
+        resp_b = candidate.get("response_b")
+
+        # Wave 14: WAF / rate-limit detection at evidence level. If
+        # either principal's response is WAF-blocked, we cannot trust
+        # the differential — both might have been blocked by the
+        # intermediary, not by object-level authorization.
+        waf_a = resp_a is not None and resp_a.status_code in (403, 406, 419, 501)
+        waf_b = resp_b is not None and resp_b.status_code in (403, 406, 419, 501)
+        rl_a = resp_a is not None and resp_a.status_code in (429, 503)
+        rl_b = resp_b is not None and resp_b.status_code in (429, 503)
+        environment_uncertainty = 0.0
+        if waf_a or waf_b:
+            environment_uncertainty = max(environment_uncertainty, 0.7)
+        if rl_a or rl_b:
+            environment_uncertainty = max(environment_uncertainty, 0.8)
+
         if req_a is not None and resp_a is not None:
             evidence.append(
                 Evidence(
@@ -606,11 +623,19 @@ class BOLACheck(Check):
                         f"{candidate.get('owner_principal')} (owner): "
                         f"status={resp_a.status_code} len={candidate.get('body_length_a', 0)}"
                     ),
+                    # Wave 14 evidence fields
+                    oracle_signal="ownership_violation",
+                    validation_outcome="confirmed",
+                    confidence="high",
+                    environment_uncertainty=environment_uncertainty,
+                    waf_detected=waf_a,
+                    rate_limited=rl_a,
+                    test_mode="active",
+                    destructive=False,
+                    destructive_level=None,
                 )
             )
 
-        req_b = candidate.get("request_b")
-        resp_b = candidate.get("response_b")
         if req_b is not None and resp_b is not None:
             evidence.append(
                 Evidence(
@@ -636,6 +661,16 @@ class BOLACheck(Check):
                         f"len={candidate.get('body_length_b', 0)}; "
                         f"diff_signature={candidate.get('body_diff_signature', '')}"
                     ),
+                    # Wave 14 evidence fields
+                    oracle_signal="ownership_violation",
+                    validation_outcome="confirmed",
+                    confidence="high",
+                    environment_uncertainty=environment_uncertainty,
+                    waf_detected=waf_b,
+                    rate_limited=rl_b,
+                    test_mode="active",
+                    destructive=False,
+                    destructive_level=None,
                 )
             )
 

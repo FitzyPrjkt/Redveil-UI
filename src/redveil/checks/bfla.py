@@ -142,6 +142,17 @@ class BFLACheck(Check):
         req = candidate.get("request")
         if not resp or not req:
             return []
+        # Wave 14: WAF / rate-limit bumps uncertainty — if the
+        # endpoint returns 403 because of a WAF (not the application's
+        # authorization), the BFLA differential signal is invalid.
+        waf_detected = resp.status_code in (403, 406, 419, 501)
+        rate_limited = resp.status_code in (429, 503)
+        if waf_detected:
+            uncertainty = 0.7
+        elif rate_limited:
+            uncertainty = 0.8
+        else:
+            uncertainty = 0.1
         return [Evidence(
             request=req,
             response=resp,
@@ -154,6 +165,16 @@ class BFLACheck(Check):
             relevant_headers={"content-type": resp.headers.get("content-type", "")},
             body_excerpt=resp.body_excerpt,
             observation=f"admin endpoint accessible; {candidate.get('marker_count', 0)} admin markers",
+            # Wave 14 evidence fields
+            oracle_signal="ownership_violation",  # closest existing kind
+            validation_outcome="inconclusive" if waf_detected or rate_limited else "likely",
+            confidence="low" if waf_detected or rate_limited else "high",
+            environment_uncertainty=uncertainty,
+            waf_detected=waf_detected,
+            rate_limited=rate_limited,
+            test_mode="active",
+            destructive=False,
+            destructive_level=None,
         )]
 
     async def assess(self, candidate) -> Finding | None:
