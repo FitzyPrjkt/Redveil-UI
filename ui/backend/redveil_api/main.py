@@ -22,6 +22,7 @@ from redveil_api.routes import (
     findings,
     issue_definitions,
     lab,
+    replay,
     scans,
     scope,
     targets,
@@ -110,3 +111,4 @@ app.include_router(config.router, prefix="/api/config", tags=["config"])
 app.include_router(scope.router, prefix="/api", tags=["scope"])
 app.include_router(issue_definitions.router, prefix="/api", tags=["issue-definitions"])
 app.include_router(entropy.router, prefix="/api/entropy", tags=["entropy"])
+app.include_router(replay.router, prefix="/api/findings", tags=["replay"])
