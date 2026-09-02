@@ -46,6 +46,15 @@ htmlcov/
 reports/*/
 !reports/.gitkeep
 !reports/**/.gitkeep
+data/reports/
+!data/reports/.gitkeep
+!data/reports/**/.gitkeep
+
+# Local sqlite DB (dev only)
+data/redveil.db
+
+# Playwright test artifacts (regenerated on each run)
+ui/frontend/test-results/*.png
 
 # Local config
 .env
