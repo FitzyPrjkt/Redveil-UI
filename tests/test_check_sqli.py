@@ -103,10 +103,15 @@ def _make_url_side_effect(
         url = req.url
         if waf and _is_probe_url(url):
             state["probe_i"] += 1
+            # WAF responses use the configured probe_ms (WAF processing
+            # typically adds latency). The hardcoded 50ms was a
+            # pre-Wave-14 leftover; the new staged cheap-probe
+            # filter needs the WAF response to register a timing
+            # delta so it escalates to the full control+probe+replay.
             return _resp(
                 body=body,
                 status=403,
-                elapsed_ms=50.0,
+                elapsed_ms=probe_ms if probe_samples is None else (probe[state["probe_i"] - 1] if state["probe_i"] - 1 < len(probe) else probe[-1]),
             )
         if rate_limit and _is_probe_url(url):
             state["probe_i"] += 1
@@ -153,17 +158,24 @@ async def test_acknowledgement_required():
 
 @pytest.mark.asyncio
 async def test_no_timing_delta_no_finding():
-    """When probe timing is the same as baseline, all candidates are
-    emitted with INCONCLUSIVE verdict (no real finding)."""
+    """Wave 14: cheap anomaly filter drops no-timing-delta candidates
+    BEFORE the expensive control+probe+replay sequence runs.
+
+    Spec invariant: "Do not perform expensive validation against every
+    parameter unless necessary." A fast (50ms) baseline + 50ms probe
+    has no timing delta → cheap probe returns AnomalySignal with
+    negative score → framework drops it.
+    """
     check = TimeBasedSQLiCheck()
     fast = _resp(elapsed_ms=50.0)
-    # New pattern runs 9 calls per (param, payload) pair, 64 pairs = 576 calls.
+    # Cheap probe: 2 requests per (param, payload) pair (baseline +
+    # probe). Then NO full control+probe+replay because the cheap
+    # probe drops everything. 8 params × 8 payloads × 2 cheap = 128
+    # calls. 700 is more than enough.
     _bind(check, [fast] * 700)
     cands = await check.discover(MagicMock())
-    # Every (param, payload) pair emits a candidate. None should be CONFIRMED.
-    assert len(cands) > 0
-    for c in cands:
-        assert c["verdict"] == INCONCLUSIVE
+    # Staged filter drops them all → empty.
+    assert cands == []
 
 
 @pytest.mark.asyncio

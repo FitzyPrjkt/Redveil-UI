@@ -37,6 +37,12 @@ from redveil.validation.control_probe import (
     run_control_probe_sequence,
 )
 from redveil.validation.oracle import Oracle, Signal, SignalKind
+from redveil.validation.staged import (
+    AnomalyKind,
+    AnomalySignal,
+    StagedValidator,
+    make_signal_from_diff,
+)
 
 # Time-delay payloads (NO data extraction, NO SELECT/UNION/OR)
 # Capped at 3 seconds delay — observable but bounded.
@@ -86,6 +92,57 @@ class TimeBasedSQLiCheck(Check):
         description="Detects time-based blind SQL injection via bounded SLEEP/pg_sleep/WAITFOR DELAY probes. No data extraction.",
         references=["CWE-89", "OWASP A03:2021"],
     )
+
+    def __init__(self) -> None:
+        super().__init__()
+        # Wave 14: StagedValidator drops obvious-non-anomalies before
+        # the expensive control+probe+replay sequence runs. SQLi
+        # is the showcase check; the framework is in
+        # redveil.validation.staged.
+        self._staged = StagedValidator()
+
+    async def _cheap_timing_probe(
+        self,
+        baseline_url: str,
+        probe_url: str,
+        threshold_ms: float,
+    ) -> AnomalySignal | None:
+        """Stage 1: single baseline + single probe. Cheap pre-filter.
+
+        Returns an AnomalySignal with negative score (DROP) when the
+        probe shows no timing anomaly vs the baseline — telling the
+        caller to skip the expensive sequence. Returns None (or a
+        positive signal) when the probe IS slow enough to warrant
+        targeted validation.
+        """
+        if self.deps is None:
+            return None
+        try:
+            base_req = Request(method="GET", url=baseline_url, purpose="sqli_cheap_baseline")
+            probe_req = Request(method="GET", url=probe_url, purpose="sqli_cheap_probe")
+            base_resp = await self.deps.http.send(base_req)
+            probe_resp = await self.deps.http.send(probe_req)
+        except Exception:
+            return None
+        # If the probe is slower than baseline by the threshold, escalate.
+        delta = probe_resp.elapsed_ms - base_resp.elapsed_ms
+        if delta < threshold_ms:
+            # Negative score → DROP from the framework's classifier.
+            # Score is -0.3 so final = TIMING_PROMISE base (0.4) - 0.3
+            # = 0.1, which is below the default DROP threshold (0.15).
+            return AnomalySignal(
+                candidate=None,
+                kind=AnomalyKind.TIMING_PROMISE,
+                score=-0.3,
+                reason=f"cheap probe delta {delta:.0f}ms < {threshold_ms:.0f}ms threshold",
+            )
+        # Positive signal — escalate.
+        return AnomalySignal(
+            candidate=None,
+            kind=AnomalyKind.TIMING_PROMISE,
+            score=0.5,  # bonus for delta above threshold
+            reason=f"cheap probe delta {delta:.0f}ms >= {threshold_ms:.0f}ms threshold",
+        )
 
     async def discover(self, ctx) -> list[dict[str, Any]]:
         if not self.deps:
@@ -152,6 +209,14 @@ class TimeBasedSQLiCheck(Check):
         params_to_test = _COMMON_PARAM_NAMES[:_PARAMS_TESTED]  # cap to keep scan bounded
         endpoint = join_url(base, "/")
 
+        # Wave 14 spec: cheap anomaly detection → targeted validation.
+        # For each (param, payload) we run ONE quick timing probe
+        # first. Only if the cheap probe shows a timing anomaly do we
+        # escalate to the full control+probe+replay sequence. Spec
+        # invariant: "Do not perform expensive validation against
+        # every parameter unless necessary."
+        _CHEAP_TIMING_THRESHOLD_MS = 800.0  # heuristic
+
         for param in params_to_test:
             baseline_url = f"{endpoint}?{param}=redveil_baseline"
             control_url = baseline_url  # control is the same legitimate request
@@ -159,9 +224,21 @@ class TimeBasedSQLiCheck(Check):
             for db_family, payload in _DELAY_PAYLOADS:
                 probe_url = f"{endpoint}?{param}={quote(payload, safe='')}"
 
-                # Adapter: URL string -> Response. The helper takes a
-                # RequestFn that accepts a URL; the existing HttpClient
-                # takes a Request, so we wrap it here.
+                # ── STAGE 1: cheap anomaly detection ────────────────
+                # Single baseline + single probe request. If the
+                # probe isn't significantly slower than baseline,
+                # skip the full control+probe+replay sequence.
+                cheap_signal = await self._cheap_timing_probe(
+                    baseline_url, probe_url, _CHEAP_TIMING_THRESHOLD_MS,
+                )
+                if cheap_signal is not None and cheap_signal.score < 0:
+                    # Cheap probe says "no anomaly" → drop before
+                    # running the expensive sequence.
+                    continue
+
+                # ── STAGE 2: targeted validation ────────────────────
+                # Cheap probe showed a possible anomaly → escalate
+                # to the full control+probe+replay sequence.
                 async def request_fn(url: str) -> Response:
                     req = Request(
                         method="GET",
