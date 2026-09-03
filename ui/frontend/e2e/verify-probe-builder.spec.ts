@@ -42,6 +42,10 @@ test("probe builder: switch to custom mode shows textarea", async ({ page }) => 
   // Run button appears + is enabled
   await expect(page.getByTestId("run-probe")).toBeVisible({ timeout: 5000 });
   await expect(page.getByTestId("run-probe")).toBeEnabled();
+  // Scroll the gates into view so the screenshot shows them clearly
+  // without relying on fullPage = true.
+  await page.getByTestId("gate1").scrollIntoViewIfNeeded();
+  await page.getByTestId("gate2").scrollIntoViewIfNeeded();
   await page.screenshot({ path: "test-results/probe-builder-gates.png", fullPage: true });
 });
 
