@@ -10,6 +10,7 @@ import {
   IconPuzzle,
   IconSettings,
   IconShieldCheck,
+  IconWaveSine,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 
@@ -24,6 +25,7 @@ const navItems: NavItem[] = [
   { label: "Targets", href: "/targets", icon: IconTarget },
   { label: "Scan History", href: "/scans", icon: IconHistory },
   { label: "Plugins", href: "/plugins", icon: IconPuzzle },
+  { label: "Probe Builder", href: "/probe-builder", icon: IconWaveSine },
   { label: "Settings", href: "/settings", icon: IconSettings },
 ];
 
