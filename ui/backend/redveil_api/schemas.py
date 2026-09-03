@@ -320,3 +320,62 @@ class ReplayOut(BaseModel):
     verdict: str  # "Reproducible" | "Not verified" | "Flaky"
     notes: str = ""
     executed_at: str  # ISO-8601 timestamp
+
+
+# --- Probe Builder (Wave 14) -----------------------------------------------
+
+
+class ProbeRunIn(BaseModel):
+    """Request body for POST /api/probes/custom.
+
+    The frontend builds this AFTER the operator types the DWYOR
+    confirm string into the Gate 2 input. If confirmed_dwyor is
+    false, the endpoint returns 403 and never invokes ProbeRunner.
+    """
+
+    target_id: int
+    payloads: list[str] = Field(..., min_length=1, max_length=200)
+    method: str = Field(default="GET", pattern=r"^(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)$")
+    position: str = Field(default="", max_length=200)
+    position_kind: str = Field(default="query", pattern=r"^(query|path|body)$")
+    path_template: str | None = None  # used when position_kind="path"
+    body_template: str | None = None  # used when position_kind="body"
+    extra_headers: dict[str, str] | None = None
+    confirmed_dwyor: bool = False
+    attack_mode: str = Field(default="sniper", pattern=r"^sniper$")
+    preset_check_id: str | None = None  # if Preset mode, which check's set
+
+
+class ProbeSampleOut(BaseModel):
+    """One sample from a probe run — mirrors ReplaySample shape."""
+
+    index: int
+    payload: str
+    status_code: int
+    elapsed_ms: float
+    body_length: int
+    body_excerpt: str = ""
+    error: str | None = None
+    method: str
+    target_url: str
+    position: str
+    started_at: str = ""
+
+
+class ProbeRunOut(BaseModel):
+    """Response body for POST /api/probes/custom."""
+
+    probe_id: str
+    target_id: int
+    scan_id: int  # synthetic scan row for Evidence Log integration
+    finding_wpoc_id: str  # synthetic finding carrying the evidence
+    mode: str  # "preset" or "custom"
+    method: str
+    target_url: str
+    total_requested: int
+    total_executed: int
+    skipped: int
+    scope_rejections: int
+    samples: list[ProbeSampleOut]
+    started_at: str
+    completed_at: str
