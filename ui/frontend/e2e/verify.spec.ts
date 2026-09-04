@@ -25,9 +25,16 @@ test("dashboard renders", async ({ page }) => {
   await expect(page.getByText("Active targets")).toBeVisible();
   await expect(page.getByText("Findings (7d)")).toBeVisible();
 
-  // Verify mock scans appear
-  await expect(page.getByText("staging.example.com")).toBeVisible();
-  await expect(page.getByText("api.acme.dev")).toBeVisible();
+  // Verify the activity list shows the real seeded target URL
+  // (no more hardcoded mock "staging.example.com" / "api.acme.dev"
+  // — those were placeholders from before Dashboard was wired).
+  await expect(
+    page.getByTestId("activity-row").first(),
+  ).toBeVisible({ timeout: 10000 });
+  // The seeded DB has a staging-app target; the real data must show it.
+  // Many scans hit the same target so use .first() to avoid
+  // strict-mode violation.
+  await expect(page.getByText("staging.example.com").first()).toBeVisible();
 });
 
 test("plugins page renders with checks", async ({ page }) => {
