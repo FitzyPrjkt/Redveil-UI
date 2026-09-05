@@ -60,3 +60,13 @@ ui/frontend/test-results/*.png
 .env
 .env.local
 *.local.yaml
+
+# Design source — not shipped in public release.
+# Exception: PYPI-shots/ is tracked (used in the published redveil-ui README).
+Mockup-Redveil/*
+!Mockup-Redveil/PYPI-shots/
+
+# Lab integration tests — require Docker, not for public release
+tests/lab/
+tests/test_e2e_lab.py
+tests/test_negative_testing.py

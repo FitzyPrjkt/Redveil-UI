@@ -33,11 +33,11 @@ web vulnerability scanner. find vulns, validate safely, get a report you can act
 >
 > ```bash
 > # Option 1: pipx (recommended, installs to isolated env, command globally available)
-> pipx install redveil
+> pipx install redveil-ui
 >
 > # Option 2: python venv
 > python3 -m venv ~/redveil-env && source ~/redveil-env/bin/activate
-> pip install redveil
+> pip install redveil-ui
 > ```
 >
 > See [USER_GUIDE.md#install](https://github.com/FitzyPrjkt/Redveil/blob/main/USER_GUIDE.md#install) for distro-specific
@@ -59,42 +59,31 @@ $ redveil scan https://target.example --scope scope.yaml
 $ redveil list-checks
 ```
 
-## install
+## Install
 
-**Don't use bare `pip install redveil`** on modern Linux — it'll fail with
-`error: externally-managed-environment` (PEP 668). Use one of:
-
-```bash
-# pipx (easiest — installs to isolated env, command globally available)
-pipx install redveil
-```
+### Recommended: pipx (PEP 668 compliant)
 
 ```bash
-# or python venv
-python3 -m venv ~/redveil-env
-source ~/redveil-env/bin/activate
-pip install redveil
+pipx install redveil-ui
+pipx ensurepath
+redveil-ui init
+redveil-ui start
 ```
 
-distro-specific:
-- **Debian/Ubuntu**: `sudo apt install pipx && pipx install redveil`
-- **Fedora/RHEL**: `sudo dnf install python3-pipx && pipx install redveil`
-- **Arch/Manjaro**: `sudo pacman -S python-pipx && pipx install redveil`
-- **openSUSE**: `sudo zypper install python3-pipx && pipx install redveil`
-- **macOS**: `brew install pipx && pipx install redveil`
-- **Windows**: `python -m venv redveil-env && .\redveil-env\Scripts\Activate.ps1 && pip install redveil`
+Modern Linux distros (Debian 12+, Ubuntu 23.04+, Fedora 38+) block
+bare `pip install` with the `externally-managed-environment` error
+(PEP 668). `pipx` installs each tool in its own venv — no system
+Python pollution.
 
-or from source (for development):
+### Alternative: python -m venv
 
 ```bash
-git clone https://github.com/FitzyPrjkt/Redveil
-cd redveil
-python3.12 -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
+python3 -m venv ~/.redveil-ui-venv
+source ~/.redveil-ui-venv/bin/activate
+pip install redveil-ui
+redveil-ui init
+redveil-ui start
 ```
-
-requires python 3.12+.
 
 ## quick start
 
@@ -290,7 +279,6 @@ see [CONTRIBUTING.md](https://github.com/FitzyPrjkt/Redveil/blob/main/CONTRIBUTI
 | Confidence | hardcoded HIGH or LOW | computed: `oracle × (1 + log2(distinct_dims)) × weight − env_penalty − uncertainty` |
 | Reproducibility | not verified | `ReplayRecipe` + `ReplayEngine` runs N samples |
 | FP reduction | none | negative testing, flakiness detection, env awareness, uncertainty propagation |
-| Root cause | one finding per endpoint | clustered across endpoints with same root cause |
 | Destructive | implicit (run anyway) | blocked by default. tiered confirmation L1-L6. no Y-to-all. |
 
 see [USER_GUIDE.md](https://github.com/FitzyPrjkt/Redveil/blob/main/USER_GUIDE.md) and [docs/architecture.md](https://github.com/FitzyPrjkt/Redveil/blob/main/docs/architecture.md) for details.

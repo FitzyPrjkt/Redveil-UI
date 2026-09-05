@@ -69,8 +69,6 @@
 - `redveil/validation/gate.py`: ActionGate with 3 modes (Wave 7-8)
 - `redveil/attack_surface/`: ApplicationModel + BehaviorModel (Phase 2)
 - `redveil/behavior/`: State + Transitions + Hypotheses + Planner (Phase 2)
-- Wave 5: root-cause clustering (`Finding.root_cause`, `cluster_size`,
-  `affected_endpoints`)
 - Wave 6: environment awareness + uncertainty propagation
 - 1070 → 1089 tests passing
 
