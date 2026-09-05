@@ -180,12 +180,23 @@ list comes from `GET /api/checks`. This is the same source the
 orchestrator loads at scan start, so a 19-check install of `redveil`
 shows 19 cards here, dynamically — no static copy.
 
-### 12. Decoder + 13. Comparer + 14. Token Entropy — utility trio
+### 12. Decoder
 
-| ![Decoder](https://raw.githubusercontent.com/FitzyPrjkt/Redveil-UI/main/Mockup-Redveil/PYPI-shots/13-decoder.png) | ![Comparer](https://raw.githubusercontent.com/FitzyPrjkt/Redveil-UI/main/Mockup-Redveil/PYPI-shots/14-comparer.png) | ![Token Entropy](https://raw.githubusercontent.com/FitzyPrjkt/Redveil-UI/main/Mockup-Redveil/PYPI-shots/15-token-entropy.png) |
-| :---: | :---: | :---: |
-| **Decoder** | **Comparer** | **Token Entropy** |
-| Multi-format decode (base64, hex, URL, HTML entities, JWT split). | Side-by-side evidence diff for two captured requests. Calls `redveil.knowledge.Comparer` to diff structured fields. | Shannon entropy + per-token analysis. `POST /api/entropy/analyze`. |
+![Decoder](https://raw.githubusercontent.com/FitzyPrjkt/Redveil-UI/main/Mockup-Redveil/PYPI-shots/13-decoder.png)
+
+Multi-format decode (base64, hex, URL, HTML entities, JWT split). Reads a string, tries every decoder, shows the output. Frontend is a thin wrapper around `redvil.knowledge.Decoder`.
+
+### 13. Comparer
+
+![Comparer](https://raw.githubusercontent.com/FitzyPrjkt/Redveil-UI/main/Mockup-Redveil/PYPI-shots/14-comparer.png)
+
+Side-by-side evidence diff for two captured requests. Calls `redveil.knowledge.Comparer` to diff structured fields (status code, headers, body) so the operator can spot what changed between two runs of the same endpoint.
+
+### 14. Token Entropy
+
+![Token Entropy](https://raw.githubusercontent.com/FitzyPrjkt/Redveil-UI/main/Mockup-Redveil/PYPI-shots/15-token-entropy.png)
+
+Shannon entropy + per-token analysis. `POST /api/entropy/analyze` takes a string and surfaces both the overall entropy score and the per-segment breakdown — useful when reviewing captured session tokens, JWTs, or other opaque strings that the operator wants to fingerprint.
 
 ### 15. Settings — the live config, not a hardcoded page
 
