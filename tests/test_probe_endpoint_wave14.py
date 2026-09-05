@@ -23,9 +23,12 @@ def client():
     """Use FastAPI's TestClient against the live app."""
     from fastapi.testclient import TestClient
 
-    from redveil_api.main import app
+    from redveil_ui.api.main import app
 
-    return TestClient(app)
+    # Use `with` so the lifespan runs — it creates the DB schema on startup.
+    # Without context-manager entry, lifespan tables are not created.
+    with TestClient(app) as c:
+        yield c
 
 
 def test_payload_sets_lists_presets(client):

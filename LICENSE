@@ -1,21 +1,58 @@
-MIT License
+Copyright (c) 2026 fitzydev. All rights reserved.
 
-Copyright (c) 2026 Security Research Team
+PROPRIETARY LICENSE — NOT OPEN SOURCE
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+This software and associated documentation files (the "Software")
+are proprietary and confidential. The Software is made available for
+inspection via this repository, but that availability does NOT
+constitute a license to use, copy, modify, redistribute, or create
+derivative works of the Software.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+PERMITTED USE
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+- Personal self-hosting of the Software, unmodified, for the purpose
+  of running it on machines you control, in accordance with its
+  intended functionality.
+
+PROHIBITED, unless you have prior written permission from the
+copyright holder:
+
+- Redistribution, public mirroring, or making the Software available
+  to third parties (including via package mirrors, container
+  registries, or pre-built binaries distributed outside of PyPI).
+
+- Modification, adaptation, translation, reverse engineering, or
+  creation of derivative works based on the Software.
+
+- Rebranding, repackaging, or removing copyright or license notices.
+
+- Use of the names "redveil", "redveil-ui", or any confusingly similar
+  name, mark, or logo for any derivative product or service.
+
+- Commercial use, sale, sublicensing, rental, or leasing.
+
+- Distribution as part of a product or service that competes with
+  the Software.
+
+DEPENDENCIES
+
+The Software depends on the [redveil](https://pypi.org/project/redveil/)
+library by the same author. The redveil library is governed by its
+own separate license. This license applies only to the redveil-ui
+package, not to the underlying redveil library.
+
+REPORTING IMPROPER USE
+
+If you become aware of any use of the Software that violates this
+license, please contact the copyright holder. The copyright holder
+reserves the right to enforce the terms of this license.
+
+NO WARRANTY
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE
+FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF
+CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION
+WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
