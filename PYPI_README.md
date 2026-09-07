@@ -4,7 +4,7 @@
 
 [![PyPI version](https://img.shields.io/pypi/v/redveil-ui.svg)](https://pypi.org/project/redveil-ui/)
 [![Python](https://img.shields.io/pypi/pyversions/redveil-ui.svg)](https://pypi.org/project/redveil-ui/#files)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/FitzyPrjkt/Redveil/blob/main/LICENSE)
+[![License: Proprietary](https://img.shields.io/badge/License-Proprietary-red.svg)](https://github.com/FitzyPrjkt/Redveil/blob/main/LICENSE)
 [![Tests](https://img.shields.io/badge/tests-1101%20passing-brightgreen.svg)](https://github.com/FitzyPrjkt/Redveil)
 [![redveil](https://img.shields.io/badge/depends%20on-redveil%201.9.6+-blue.svg)](https://pypi.org/project/redveil/)
 
@@ -184,7 +184,7 @@ shows 19 cards here, dynamically — no static copy.
 
 ![Decoder](https://raw.githubusercontent.com/FitzyPrjkt/Redveil-UI/main/Mockup-Redveil/PYPI-shots/13-decoder.png)
 
-Multi-format decode (base64, hex, URL, HTML entities, JWT split). Reads a string, tries every decoder, shows the output. Frontend is a thin wrapper around `redvil.knowledge.Decoder`.
+Multi-format decode (base64, hex, URL, HTML entities, JWT split). Reads a string, tries every decoder, shows the output. Frontend is a thin wrapper around `redveil.knowledge.Decoder`.
 
 ### 13. Comparer
 
@@ -219,8 +219,8 @@ No fake / hardcoded values.
 | State | SQLite at `~/.redveil-ui/data/` | Per-run directory under `reports/` | Project server, often remote |
 | Probe library | Same 19 checks via the installed `redveil` library | Same 19 checks | Different ecosystems |
 | Replay | One click in the UI | `redveil replay <report-dir>` | Manual via Intruder/Comparer |
-| Cost | Free, MIT, self-hosted | Free, MIT, self-hosted | $400+/yr per seat |
-| Best for | Solo operators running scans on their own schedule | CI / scripted / scripted | Teams with budget + need for shared state |
+| Cost | Free, Proprietary, self-hosted | Free, MIT, self-hosted | $400+/yr per seat |
+| Best for | Solo operators running scans on their own schedule | CI / scripted / automated | Teams with budget + need for shared state |
 
 If you only run scans from cron or CI, the CLI is enough. If you want
 to sit at a browser while a scan runs, see findings populate, dig into
