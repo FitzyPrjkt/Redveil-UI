@@ -1,288 +1,332 @@
-# redveil
+# redveil-ui
 
-web vulnerability scanner. find vulns, validate safely, get a report you can actually send to a dev team.
+**Self-hosted dashboard for [redveil](https://pypi.org/project/redveil/) scans. Burp-style workspace, real findings, zero cloud dependency.**
 
----
-
-> ## ⚠️ DANGER ZONE — DWYOR (Do With Your Own Risk)
->
-> **READ THIS BEFORE USING REDVEIL.**
->
-> Redveil is intended for **authorized security testing only**.
->
-> - ✅ You **own** the system, OR
-> - ✅ You have **explicit written permission** to test it
->
-> If neither applies: **DO NOT USE THIS TOOL.**
->
-> The authors are not responsible for misuse, damage, data loss, or
-> unauthorized activity resulting from the use of this software.
->
-> **You** are responsible for legal and ethical compliance.
->
-> See [DWYOR.md](DWYOR.md) for the full statement.
-
----
-
-> ⚠️ **Installation requires a virtual environment or `pipx`.**
->
-> Modern Linux distros (Debian 12+, Ubuntu 23.04+, Fedora, etc.) enforce
-> [PEP 668](https://peps.python.org/pep-0668/) and block system-wide
-> `pip install` with the error
-> `error: externally-managed-environment`. Use one of these:
->
-> ```bash
-> # Option 1: pipx (recommended, installs to isolated env, command globally available)
-> pipx install redveil-ui
->
-> # Option 2: python venv
-> python3 -m venv ~/redveil-env && source ~/redveil-env/bin/activate
-> pip install redveil-ui
-> ```
->
-> See [USER_GUIDE.md#install](https://github.com/FitzyPrjkt/Redveil/blob/main/USER_GUIDE.md#install) for distro-specific
-> commands (apt, dnf, pacman, zypper, brew, etc.).
-
-<!-- Badges -->
-[![PyPI version](https://img.shields.io/pypi/v/redveil.svg)](https://pypi.org/project/redveil/)
-[![Python versions](https://img.shields.io/pypi/pyversions/redveil.svg)](https://pypi.org/project/redveil/#files)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/FitzyPrjkt/Redveil/blob/main/LICENSE)
-[![Tests](https://img.shields.io/badge/tests-1101%20passing-brightgreen.svg)](https://github.com/FitzyPrjkt/Redveil/actions)
-[![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
-[![Security: tiered gate](https://img.shields.io/badge/destructive%20ops-tiered%20confirm-orange.svg)](https://github.com/FitzyPrjkt/Redveil/blob/main/SECURITY.md)
-[![Negative testing](https://img.shields.io/badge/FP%20testing-secure%20fixture-green.svg)](tests/test_negative_testing.py)
-[![Audit log](https://img.shields.io/badge/audit%20log-per%20action%20decision-blue.svg)](src/redveil/validation/gate.py)
-
-```
-$ pip install redveil
-$ redveil scan https://target.example --scope scope.yaml
-$ redveil list-checks
-```
-
-## Install
-
-### Recommended: pipx (PEP 668 compliant)
+[![PyPI version](https://img.shields.io/pypi/v/redveil-ui.svg)](https://pypi.org/project/redveil-ui/)
+[![Python](https://img.shields.io/pypi/pyversions/redveil-ui.svg)](https://pypi.org/project/redveil-ui/#files)
+[![License: Proprietary](https://img.shields.io/badge/License-Proprietary-red.svg)](https://github.com/FitzyPrjkt/Redveil-UI/blob/main/LICENSE)
+[![Tests](https://img.shields.io/badge/tests-1101%20passing-brightgreen.svg)](https://github.com/FitzyPrjkt/Redveil-UI)
+[![redveil](https://img.shields.io/badge/depends%20on-redveil%201.9.6+-blue.svg)](https://pypi.org/project/redveil/)
 
 ```bash
 pipx install redveil-ui
-pipx ensurepath
 redveil-ui init
 redveil-ui start
+# open http://127.0.0.1:8000
 ```
 
-Modern Linux distros (Debian 12+, Ubuntu 23.04+, Fedora 38+) block
-bare `pip install` with the `externally-managed-environment` error
-(PEP 668). `pipx` installs each tool in its own venv — no system
-Python pollution.
+> **⚠️ Before you start — this runs on YOUR network**
+>
+> **redveil-ui is 100% local.** No data leaves the host it runs on. The
+> app is bound to `127.0.0.1` by default — it is **not** reachable from
+> other devices on your network unless you change the config. If you do
+> expose it, every scan it launches is sent from **your** IP address
+> against the target you specify. If the target isn't yours, or you
+> don't have explicit written permission to test it, the legal and
+> ethical responsibility is yours — not the maintainers'.
+>
+> Because the dashboard is self-hosted, the security perimeter is also
+> yours: who can reach the instance, what targets you queue, and
+> whether destructive checks are enabled. Treat it like any other
+> local service with a security boundary.
+>
+> The **Probe Builder**'s "Custom payload" mode has a two-gate
+> confirmation (Gate 1 + Gate 2, both required). That's not UI friction
+> for its own sake — it's because custom payloads sit **outside** the
+> curated set of redveil's built-in checks, so the framework can't
+> pre-validate them for safety. The two gates exist so you have to
+> pause and confirm what you're about to send.
+>
+> See [`DWYOR.md`](https://github.com/FitzyPrjkt/Redveil-UI/blob/main/DWYOR.md)
+> for the full statement.
 
-### Alternative: python -m venv
-
-```bash
-python3 -m venv ~/.redveil-ui-venv
-source ~/.redveil-ui-venv/bin/activate
-pip install redveil-ui
-redveil-ui init
-redveil-ui start
-```
-
-## quick start
-
-```bash
-# 1. write a scope file
-cat > scope.yaml <<'EOF'
-target:
-  base_url: https://staging.example.com
-scope:
-  allowed_hosts:
-    - staging.example.com
-  allowed_paths:
-    - /api/*
-    - /account/*
-limits:
-  requests_per_second: 2
-  max_requests: 500
-authorization:
-  active_testing: false
-  acknowledged_safety_terms: false
-profile: passive
-EOF
-
-# 2. scan
-redveil scan https://staging.example.com --scope scope.yaml
-
-# 3. results
-ls reports/staging.example.com/
-cat reports/staging.example.com/summary.md
-open reports/staging.example.com/report.html
-```
+---
 
 ## what you get
 
-- **17 built-in checks** — security headers, CORS, info disclosure, HTTP methods, open redirect indicators, source map exposure, XSS (canary reflection), SQLi (time-based), SSRF (OOB), command injection (time-based), path traversal (canary), BOLA/IDOR, BFLA, GraphQL, mass assignment, session/cookie config, subdomain discovery
-- **multi-format reports** — markdown per finding, JSON for tooling, self-contained HTML
-- **strict scope enforcement** — host + path allowlist, redirect chain validation, destructive path heuristic. plugins cannot bypass it
-- **multi-principal auth** for BOLA testing — define Account A + Account B in scope, redveil compares what each can see
-- **evidence sanitization** — JWTs, AWS keys, GitHub tokens, credit cards, cookies, emails all redacted before report
-- **local lab** at `tests/lab/` — a Flask app with 17 deliberately vulnerable endpoints for testing without hitting the internet
+The package bundles a FastAPI backend, a Next.js 16 SPA, and the
+[`redveil`](https://pypi.org/project/redveil/) library under one uvicorn
+process on one port. One install, one config file, one URL to remember.
 
-## safety
+The screenshots below are taken against this exact package, served by
+`redveil-ui start`, with a seeded scan + finding to make the data
+realistic. Click any of them to view full-size.
 
-redveil is a defensive tool. the active checks (XSS, SQLi, SSRF, command injection, path traversal) use **bounded non-destructive payloads**:
+### 1. Targets — register a host before you scan it
 
-- XSS: alphanumeric canary strings. no `<script>`, no execution
-- SQLi/command injection: time-based delay only (`sleep 3`). no data extraction
-- SSRF: OOB callback to operator's own domain. no internal IP probing
-- path traversal: unique canary filenames. no real file reads
+![Targets list](https://raw.githubusercontent.com/FitzyPrjkt/Redveil-UI/main/Mockup-Redveil/PYPI-shots/02-targets-list.png)
 
-runtime assertions in each check verify these constraints on every import. the test suite has explicit safety tests for every check.
+The starting point. Every scan targets a row in this list. Each row
+carries the URL, an optional human label, and the YAML scope block
+that the orchestrator hands to the `redveil` library's
+`ScopeController`. Add a target once, scan it many times against
+different profiles.
 
-**you are responsible for authorization.** redveil includes guards but they only matter if you actually have permission to test the target.
+The `New target` button (top right) takes you to the combined
+**target + scan** form — see "New Scan" below.
 
-see [SECURITY.md](https://github.com/FitzyPrjkt/Redveil/blob/main/SECURITY.md) for the full safety model and how to report issues.
+### 2. New Scan — target + scan config in one form
 
-## CLI
+![New Scan form](https://raw.githubusercontent.com/FitzyPrjkt/Redveil-UI/main/Mockup-Redveil/PYPI-shots/03-new-target.png)
+
+This is the primary action of the dashboard: register a target
+**and** configure the scan in a single form. Fields:
+
+- **URL** (required) — validated client-side for http(s) scheme, blocked from cloud-metadata endpoints (`169.254.169.254` and `metadata.google.internal`).
+- **Name** (optional) — operator-friendly label.
+- **Scope YAML** (optional) — if omitted, the auto-allow scope from `scope_check.py` lets the target's host through; otherwise a strict `allowed_hosts` / `allowed_paths` block is enforced at scan creation.
+- **Profile** — `passive` (default, read-only recon), `low_impact` (non-destructive probes), `active` (exploitation-grade; needs `allow_destructive`).
+- **Destructive level ceiling** — `L1` through `L6`. The framework refuses any scan where `level >= L3` and `allow_destructive` is `false`.
+- **Allow destructive** — opt-in unlock. Default `false`. Without it, even L3+ checks are denied per-action at runtime.
+- **Gate mode** — `non_interactive` (default, auto-approve and log), `strict` (auto-deny MEDIUM+), `interactive` (v2, currently disabled).
+- **Max requests** (optional) — hard cap. The form warns if you pick `active` with a budget below `1500` (Time-Based SQLi worst case `640` + Command Injection worst case `1190`).
+
+Submitting creates the target row **and** starts the scan in one POST pair; the page redirects to the new scan's detail page where progress streams in live.
+
+### 3. Scan Detail — live progress, findings, controls
+
+![Scan detail](https://raw.githubusercontent.com/FitzyPrjkt/Redveil-UI/main/Mockup-Redveil/PYPI-shots/06-scan-detail.png)
+
+The high-traffic page during a scan. Three things stream in:
+
+1. **Status pill** (top): `pending` → `running` → `completed` / `failed`.
+2. **Findings list** (mid): populates as the orchestrator emits them. Each row has severity, confidence, title, endpoint, and a `View` link.
+3. **Event log** (right rail): per-action decisions from the `ActionGate` (auto-approve, denied, etc).
+
+SSE connection: `GET /api/scans/{id}/stream` emits one event per orchestrator action with `: keep-alive` heartbeats every 15s. The Python backend uses a per-scan pub-sub (`redveil_ui/api/event_bus.py`) so the orchestrator can run independently of any open SSE clients — closing the tab does **not** cancel the scan.
+
+### 4. Scan History — past runs at a glance
+
+![Scan History](https://raw.githubusercontent.com/FitzyPrjkt/Redveil-UI/main/Mockup-Redveil/PYPI-shots/04-scans-list.png)
+
+List of every scan the operator has run, ordered newest first. Filters: status (`all` / `running` / `completed` / `failed`) and free-text search across target URL + name. Click any row to go to that scan's detail page.
+
+Stat tiles at the top show total scans, running count, and 7-day finding count. Empty state prompts the operator to start a new scan.
+
+### 5. Dashboard — entry point
+
+![Dashboard](https://raw.githubusercontent.com/FitzyPrjkt/Redveil-UI/main/Mockup-Redveil/PYPI-shots/01-dashboard.png)
+
+Recent activity, stat tiles (total scans / active targets / 7-day findings), and quick links to create targets or review history. Sidebar nav gives one-click access to every section.
+
+### 6. Target / Site Map — per-target endpoint inventory
+
+![Target sitemap](https://raw.githubusercontent.com/FitzyPrjkt/Redveil-UI/main/Mockup-Redveil/PYPI-shots/10-target-sitemap.png)
+
+Drill-down view for a single target: every endpoint the orchestrator
+discovered during scans, grouped by folder, with per-endpoint finding
+counts and severity histograms. Pulls from
+`GET /api/targets/{id}/sitemap`.
+
+### 7. Evidence Log — every request/response captured
+
+![Evidence Log](https://raw.githubusercontent.com/FitzyPrjkt/Redveil-UI/main/Mockup-Redveil/PYPI-shots/07-evidence-log.png)
+
+All `Evidence` objects written by the orchestrator during scans. Each row has the timestamp, endpoint, HTTP method, status code, body length, and a short body excerpt. Filterable by `method`, `check_id`, and `status_min`/`status_max`. Click a row to expand the full request/response.
+
+This is the same evidence that powers the `ReplayEngine` and the
+`confidence = oracle × (1 + log2(distinct_dims)) × weight − env_penalty − uncertainty` scoring in the underlying `redveil` library.
+
+### 8. Finding Detail — investigate one finding
+
+![Finding detail](https://raw.githubusercontent.com/FitzyPrjkt/Redveil-UI/main/Mockup-Redveil/PYPI-shots/08-finding-detail.png)
+
+For a single finding: severity, confidence, CWE / OWASP tags,
+`technical_explanation` (why the orchestrator marked this as a finding),
+and `remediation` (what to do about it). The Replay button runs the
+captured `ReplayRecipe` N times to verify reproducibility — see Replay
+below.
+
+### 9. Replay — verify reproducibility
+
+![Replay](https://raw.githubusercontent.com/FitzyPrjkt/Redveil-UI/main/Mockup-Redveil/PYPI-shots/09-replay.png)
+
+Takes the captured `ReplayRecipe` (request method + URL + body + headers) and re-issues it `N` times. If the timing-signal reproduces consistently, the finding's confidence is corroborated; if it flakes, the
+finding is demoted. The `redveil` library's `ReplayEngine` runs the
+samples; this UI just configures sample count and shows the verdict.
+
+If the original finding has no `replay_recipe` (some checks don't
+capture one — that's documented in the model), the Replay button is
+hidden and a "Replay not available" callout shows why.
+
+### 10. Probe Builder — manual targeted probing
+
+![Probe Builder](https://raw.githubusercontent.com/FitzyPrjkt/Redveil-UI/main/Mockup-Redveil/PYPI-shots/11-probe-builder.png)
+
+Operator-initiated probes, separate from the automatic checks. Two modes:
+
+- **Preset** — pick a built-in check (e.g. `sqli-time-based`) and the
+  client fetches its payload set from
+  `GET /api/probes/payload-sets`. Select by index, no string input.
+- **Custom** — write your own payload string. The form requires
+  `confirmed_dwyor: true` in the POST body and the endpoint enforces
+  this with `HTTP 403` if missing — the two-gate DWYOR confirmation
+  (`Gate 1` expand to acknowledge, then `Gate 2` type-to-confirm).
+  This is the "outside curated checks" path mentioned in the warning
+  at the top of this README.
+
+The Probe Builder reuses the same `HttpClient` + `ScopeController` as
+the automatic checks, so the same scope/destructive-level rules apply.
+A custom probe that violates scope is rejected by `HttpClient` with
+`ScopeViolation` before any request is sent.
+
+### 11. Plugins — 19 checks at a glance
+
+![Plugins](https://raw.githubusercontent.com/FitzyPrjkt/Redveil-UI/main/Mockup-Redveil/PYPI-shots/12-plugins.png)
+
+Read-only list of every check plugin discovered from the installed
+`redveil` library via its `entry_points = redveil.checks` metadata. The
+list comes from `GET /api/checks`. This is the same source the
+orchestrator loads at scan start, so a 19-check install of `redveil`
+shows 19 cards here, dynamically — no static copy.
+
+### 12. Decoder
+
+![Decoder](https://raw.githubusercontent.com/FitzyPrjkt/Redveil-UI/main/Mockup-Redveil/PYPI-shots/13-decoder.png)
+
+Multi-format decode (base64, hex, URL, HTML entities, JWT split). Reads a string, tries every decoder, shows the output. Frontend is a thin wrapper around `redveil.knowledge.Decoder`.
+
+### 13. Comparer
+
+![Comparer](https://raw.githubusercontent.com/FitzyPrjkt/Redveil-UI/main/Mockup-Redveil/PYPI-shots/14-comparer.png)
+
+Side-by-side evidence diff for two captured requests. Calls `redveil.knowledge.Comparer` to diff structured fields (status code, headers, body) so the operator can spot what changed between two runs of the same endpoint.
+
+### 14. Token Entropy
+
+![Token Entropy](https://raw.githubusercontent.com/FitzyPrjkt/Redveil-UI/main/Mockup-Redveil/PYPI-shots/15-token-entropy.png)
+
+Shannon entropy + per-token analysis. `POST /api/entropy/analyze` takes a string and surfaces both the overall entropy score and the per-segment breakdown — useful when reviewing captured session tokens, JWTs, or other opaque strings that the operator wants to fingerprint.
+
+### 15. Settings — the live config, not a hardcoded page
+
+![Settings](https://raw.githubusercontent.com/FitzyPrjkt/Redveil-UI/main/Mockup-Redveil/PYPI-shots/16-settings.png)
+
+Reads the same `~/.redveil-ui/config.yaml` that `redveil-ui init` wrote
+and the server reads at startup. Every field shown here is the value
+the running process is actually using (`host`, `port`, `data_dir`,
+`reports_dir`, `gate_mode`, `max_destructive_level`, `allow_destructive`).
+No fake / hardcoded values.
+
+---
+
+## why redveil-ui vs the CLI
+
+| | `redveil-ui` (this package) | `redveil` CLI | Burp / Nessus / enterprise platforms |
+|---|---|---|---|
+| Interface | Browser dashboard, one port, real-time SSE | Terminal, exit code, JSON output | Heavy Java/Electron client, often paid |
+| Hosting | 100% local, `127.0.0.1` by default | Your shell | Cloud / licensed server |
+| State | SQLite at `~/.redveil-ui/data/` | Per-run directory under `reports/` | Project server, often remote |
+| Probe library | Same 19 checks via the installed `redveil` library | Same 19 checks | Different ecosystems |
+| Replay | One click in the UI | `redveil replay <report-dir>` | Manual via Intruder/Comparer |
+| Cost | Free, Proprietary, self-hosted | Free, MIT, self-hosted | $400+/yr per seat |
+| Best for | Solo operators running scans on their own schedule | CI / scripted / automated | Teams with budget + need for shared state |
+
+If you only run scans from cron or CI, the CLI is enough. If you want
+to sit at a browser while a scan runs, see findings populate, dig into
+evidence, and replay individual results, this is the interface.
+
+---
+
+## architecture
 
 ```
-$ redveil --help                # show all commands
-$ redveil scan --help            # scan command flags
-$ redveil check --help           # single-check flags
-$ redveil list-checks            # list 17 registered check plugins
-$ redveil findings <dir>         # show summary of a saved report
-$ redveil report <dir>           # re-render a report
+Browser (port 8000)
+   │
+   │ HTTP / SSE
+   ▼
+Uvicorn :8000 (single process)
+   │
+   ├─► FastAPI app (redveil_ui.api.main)
+   │     ├─► /api/* routers
+   │     │     ├─ /api/targets, /api/scans, /api/findings
+   │     │     ├─ /api/checks, /api/probes/*
+   │     │     ├─ /api/entropy/analyze
+   │     │     └─ /api/scans/{id}/stream  (SSE)
+   │     ├─► redveil_ui.api.event_bus (per-scan pub-sub for SSE)
+   │     └─► Static SPA fallback: serves ui/frontend/out/{route}.html
+   │           └─► React Router hydrates the rest
+   │
+   └─► redveil_ui.scanner (orchestrator)
+         │
+         │  imports from `redveil` (installed lib, version pinned ≥1.9.6)
+         ▼
+       redveil.orchestrator.run(scan)
+         → redveil.http.HttpClient (with ScopeController)
+         → redveil.plugins.check_registry
+         → redveil.validation.ActionGate
+         → redveil.reporting.markdown.write_report
+         → redveil_ui.api.event_bus.publish (for SSE)
 ```
 
-### `redveil scan <url>`
+One port, one process, one SQLite file. The frontend is a static
+export served by the same uvicorn. There is no separate API server, no
+reverse proxy, no Redis, no Postgres.
 
-Run a full scan against a target. Flags:
+---
 
-| Flag | Description |
-|---|---|
-| `<url>` | **Required.** Target base URL, e.g. `https://staging.example.com` |
-| `-s`, `--scope FILE` | Path to a scope YAML file. If omitted, a minimal single-host scope is built. |
-| `-p`, `--profile PROFILE` | Safety profile: `passive` (default), `low_impact`, or `active` |
-| `--max-requests N` | Hard cap on total requests (default 500) |
-| `--rps N` | Requests per second (default 2.0) |
-| `--active` | Enable ACTIVE checks. Requires `acknowledged_safety_terms: true` in scope. |
-| `-g`, `--gate-mode MODE` | ActionGate mode: `interactive`, `non_interactive` (default), `strict` |
-| `--allow-destructive` | Explicit opt-in to unlock destructive actions (each still needs per-action typed confirm) |
-| `--max-destructive-level L` | Operator's ceiling. Short form `L1`-`L6` or integer. Default `2` (data_modification). |
-| `-o`, `--output DIR` | Output directory for reports (default `reports/`) |
+## requirements
 
-### `redveil check <plugin-id> <url>`
+- **Python ≥ 3.11**
+- **redveil ≥ 1.9.6** (auto-installed as a dependency)
+- **~80 MB disk** for the wheel + transitive deps in a fresh venv
+- A free TCP port (default `8000`; the init command picks the next free port if `8000` is taken)
 
-Run a single check plugin. Useful for targeted testing.
+`redveil` must be importable as `import redveil` — the dashboard will
+fail-fast at startup if it isn't.
 
-```bash
-redveil check cors-policy https://staging.example.com
-redveil check xss-reflected https://target.com --scope scope.yaml
-```
+---
 
-### `redveil list-checks`
+## status & roadmap
 
-List all 17 registered check plugins with their safety profile:
+**0.1.0 is feature-complete for the documented surface.** All 15
+routes render, all major actions work, 1101/1101 library tests pass,
+19/19 dashboard e2e tests pass on a fresh install in a clean venv.
 
-```
-bfla                BFLA / Function-Level Authorization Check
-bola-idor           BOLA / IDOR Check
-command-injection    Command Injection Check (Time-Based)
-cors-policy         CORS Policy Check
-graphql             GraphQL Check
-http-methods        HTTP Methods Check
-information-disclosure  Information Disclosure Check
-mass-assignment     Mass Assignment Check
-open-redirect-indicator  Open Redirect Indicator
-path-traversal      Path Traversal Check
-security-headers    Security Headers Check
-session-cookie      Session and Cookie Configuration Check
-source-map-exposure Source Map Exposure Check
-sqli-time-based     Time-Based Blind SQL Injection Check
-ssrf                Server-Side Request Forgery Check
-subdomain-finder    Subdomain Finder
-xss-reflected       Reflected XSS Check
-```
+### known limitations (roadmap, not blockers)
 
-### `redveil findings <report-dir>`
+- **`false_positive` UI toggle** — the API endpoint filters false positives by default with `?include_fp=true` opt-in, but the dashboard's Findings list doesn't expose the toggle yet. Filed for 0.2.0.
+- **SQLite WAL mode + startup recovery sweep** — single-writer SQLite can lock under heavy write loads. No retry-on-lock in the current scanner. A WAL mode + `busy_timeout=5000` event-listener + startup-recovery sweep for orphan `'running'` scans is filed for 0.2.0.
+- **`max_requests` UI in scan list** — server-side cap (`Field(gt=0, le=100000)`) is enforced; per-scan row display in `/scans` doesn't surface it. Cosmetic.
+- **Empty-state contract** — list endpoints return `[]` for empty DB; `/api/scans/{id}/evidence` returns `404` (not `[]`) for an unknown scan id. UI handles both. Maybe align to `[]` in 0.2.0.
+- **e2e_lab + negative_testing tests** are backend integration tests shipped with the `redveil` library. They run cleanly (`8 + 4 = 12 pass`) and are listed in the library's CI, not the dashboard's acceptance criteria.
 
-Print a summary of a previously-saved report.
+### security posture (relevant for review)
 
-```bash
-redveil findings reports/staging.example.com/
-# Output:
-#   12 findings
-#   - [HIGH    ] Missing X-Frame-Options Header
-#   - [MEDIUM  ] Missing Content-Security-Policy Header
-#   ...
-```
+The `redveil-ui` API applies the same safety checks as the `redveil` CLI:
 
-### `redveil report <report-dir>`
+- **URL safety** (always-blocked at the schema layer): `file://`, `ftp://`, `javascript:`, `data:`, `169.254.0.0/16` (incl. AWS IMDS), `168.63.129.16` (Azure WireServer), `metadata.google.internal` (GCP). RFC1918 + loopback are allowed but must be in the target's `allowed_hosts` scope.
+- **Scope check** runs synchronously at scan creation. Out-of-scope scan → `403`, scan never starts.
+- **Destructive level**: `L3+` requires `allow_destructive: true`. Refusal is `422` with a clear message.
+- **Probe Builder** requires `confirmed_dwyor: true` in the body, validated server-side.
+- **YAML parse failure** in `scope_yaml` is a hard error (rejected with `422`), not a silent fallback to "allow everything".
+- **Loopback default**: server binds `127.0.0.1` only. LAN exposure requires a config edit.
 
-Re-render a report from existing `findings.json` (in case you want to
-regenerate the markdown/HTML after editing the JSON).
+---
 
-### Safety profiles
+## see also
 
-- `passive` (default) — only observation, no payload injection
-- `low_impact` — safe probes (CORS preflight, method check, harmless reflection)
-- `active` — requires `active_testing: true` in scope. Issues canary
-  payloads, time-based delays, OOB callbacks, etc.
-
-## writing checks
-
-a check is a `Check` subclass:
-
-```python
-from redveil.plugins.base import Check, CheckCategory, CheckMeta, ...
-
-class MyCheck(Check):
-    meta = CheckMeta(
-        id="my-check",
-        name="My Check",
-        category=CheckCategory.HEADERS,
-        safety_profile=SafetyProfile.PASSIVE,
-    )
-    async def discover(self, ctx): ...
-    async def validate(self, ctx, candidate): ...
-    async def collect_evidence(self, candidate): ...
-    async def assess(self, candidate): ...
-```
-
-register in `pyproject.toml`:
-
-```toml
-[project.entry-points."redveil.checks"]
-my-check = "my_pkg.checks:MyCheck"
-```
-
-see [CONTRIBUTING.md](https://github.com/FitzyPrjkt/Redveil/blob/main/CONTRIBUTING.md) for the full plugin spec.
-
-## files
-
-- `USER_GUIDE.md` — installation, configuration, CLI reference, output interpretation
-- `CONTRIBUTING.md` — how to add checks
-- `PUBLISH.md` — how to publish a new release
-- `SECURITY.md` — safety model, how to report issues
-- `CHANGELOG.md` — release notes
-- `docs/architecture.md` — internal design
-- `examples/` — scope files for common scenarios
-- `tests/lab/` — vulnerable Flask app for local testing
-
-## status
-
-17 checks, ~1090 tests passing, 0 known safety violations. actively used against staging environments. the framework ships with curated, tested-safe payloads; destructive actions require per-action typed confirmation (no batch approval) and an explicit `allow_destructive: true` unlock in config.
-
-## what makes redveil different from sqlmap / nikto / burp scanner
-
-| Aspect | traditional scanner | redveil |
-|---|---|---|
-| Payload | signature match (e.g. `' OR 1=1 --`) | time-based delay, OOB callback, canary reflection |
-| Action | match pattern → flag | model target → hypothesis → controlled test → multi-signal correlation → confidence-scored finding |
-| Confidence | hardcoded HIGH or LOW | computed: `oracle × (1 + log2(distinct_dims)) × weight − env_penalty − uncertainty` |
-| Reproducibility | not verified | `ReplayRecipe` + `ReplayEngine` runs N samples |
-| FP reduction | none | negative testing, flakiness detection, env awareness, uncertainty propagation |
-| Destructive | implicit (run anyway) | blocked by default. tiered confirmation L1-L6. no Y-to-all. |
-
-see [USER_GUIDE.md](https://github.com/FitzyPrjkt/Redveil/blob/main/USER_GUIDE.md) and [docs/architecture.md](https://github.com/FitzyPrjkt/Redveil/blob/main/docs/architecture.md) for details.
+- **[redveil](https://pypi.org/project/redveil/)** — the underlying scanning library. `redveil-ui` is a thin operational layer over it.
+- **[FitzyPrjkt/Redveil-UI](https://github.com/FitzyPrjkt/Redveil-UI)** — `redveil-ui` package source, build config, and PyPI release artifacts.
+- **[FitzyPrjkt/Redveil](https://github.com/FitzyPrjkt/Redveil)** — underlying [`redveil`](https://pypi.org/project/redveil/) scanning library (CLI) that `redveil-ui` depends on.
+- **`USER_GUIDE.md`** — detailed walkthrough of CLI install + scan invocation.
+- **`CONTRIBUTING.md`** — how to add a new check plugin.
+- **`SECURITY.md`** — full safety model and how to report issues.
 
 ## license
 
-MIT. see [LICENSE](LICENSE).
+**Proprietary, NOT open source.** See [`LICENSE`](https://github.com/FitzyPrjkt/Redveil-UI/blob/main/LICENSE).
+
+What you **can** do without asking:
+- Self-host the unmodified `redveil-ui` package for your own use.
+
+What you **cannot** do without written permission from the copyright holder:
+- Redistribute, mirror, or ship the package through any channel other than the official PyPI release.
+- Modify, adapt, translate, or create derivative works.
+- Rebrand, repackage, or remove the copyright / license notices.
+- Use the names `redveil`, `redveil-ui`, or any confusingly similar name on derivative products.
+- Commercial use, sale, or sublicensing.
+
+If you want a different arrangement (commercial license, derivative
+work, OEM bundling, etc.) — contact the copyright holder.
+
