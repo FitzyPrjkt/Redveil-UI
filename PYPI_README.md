@@ -4,8 +4,8 @@
 
 [![PyPI version](https://img.shields.io/pypi/v/redveil-ui.svg)](https://pypi.org/project/redveil-ui/)
 [![Python](https://img.shields.io/pypi/pyversions/redveil-ui.svg)](https://pypi.org/project/redveil-ui/#files)
-[![License: Proprietary](https://img.shields.io/badge/License-Proprietary-red.svg)](https://github.com/FitzyPrjkt/Redveil/blob/main/LICENSE)
-[![Tests](https://img.shields.io/badge/tests-1101%20passing-brightgreen.svg)](https://github.com/FitzyPrjkt/Redveil)
+[![License: Proprietary](https://img.shields.io/badge/License-Proprietary-red.svg)](https://github.com/FitzyPrjkt/Redveil-UI/blob/main/LICENSE)
+[![Tests](https://img.shields.io/badge/tests-1101%20passing-brightgreen.svg)](https://github.com/FitzyPrjkt/Redveil-UI)
 [![redveil](https://img.shields.io/badge/depends%20on-redveil%201.9.6+-blue.svg)](https://pypi.org/project/redveil/)
 
 ```bash
@@ -15,7 +15,7 @@ redveil-ui start
 # open http://127.0.0.1:8000
 ```
 
-> ## ⚠️ Before you start — this runs on YOUR network
+> **⚠️ Before you start — this runs on YOUR network**
 >
 > **redveil-ui is 100% local.** No data leaves the host it runs on. The
 > app is bound to `127.0.0.1` by default — it is **not** reachable from
@@ -37,7 +37,7 @@ redveil-ui start
 > pre-validate them for safety. The two gates exist so you have to
 > pause and confirm what you're about to send.
 >
-> See [`DWYOR.md`](https://github.com/FitzyPrjkt/Redveil/blob/main/DWYOR.md)
+> See [`DWYOR.md`](https://github.com/FitzyPrjkt/Redveil-UI/blob/main/DWYOR.md)
 > for the full statement.
 
 ---
@@ -307,7 +307,8 @@ The `redveil-ui` API applies the same safety checks as the `redveil` CLI:
 ## see also
 
 - **[redveil](https://pypi.org/project/redveil/)** — the underlying scanning library. `redveil-ui` is a thin operational layer over it.
-- **[FitzyPrjkt/Redveil](https://github.com/FitzyPrjkt/Redveil)** — full source tree (library + UI + docs in one monorepo).
+- **[FitzyPrjkt/Redveil-UI](https://github.com/FitzyPrjkt/Redveil-UI)** — `redveil-ui` package source, build config, and PyPI release artifacts.
+- **[FitzyPrjkt/Redveil](https://github.com/FitzyPrjkt/Redveil)** — underlying [`redveil`](https://pypi.org/project/redveil/) scanning library (CLI) that `redveil-ui` depends on.
 - **`USER_GUIDE.md`** — detailed walkthrough of CLI install + scan invocation.
 - **`CONTRIBUTING.md`** — how to add a new check plugin.
 - **`SECURITY.md`** — full safety model and how to report issues.
