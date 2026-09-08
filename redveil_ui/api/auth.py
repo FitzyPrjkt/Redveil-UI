@@ -106,3 +106,35 @@ def check_auth_or_fail(bind: str) -> None:
     if _has_config_hash():
         return
     raise AuthConfigError(bind=bind)
+
+
+import hmac  # noqa: E402
+import time  # noqa: E402
+
+SESSION_TTL_SECONDS = int(os.environ.get("REDVEIL_UI_SESSION_TTL", 86400))  # 24h
+
+def _cookie_value_for(api_key: str, issued_at: int) -> str:
+    """Build the cookie value: '{issued_at}.{hmac_hex}'."""
+    msg = str(issued_at).encode()
+    digest = hmac.new(api_key.encode(), msg, hashlib.sha256).hexdigest()[:32]
+    return f"{issued_at}.{digest}"
+
+def issue_session_cookie(api_key: str) -> tuple[str, int]:
+    """Returns (cookie_value, max_age_seconds)."""
+    issued_at = int(time.time())
+    return _cookie_value_for(api_key, issued_at), SESSION_TTL_SECONDS
+
+def validate_session_cookie(cookie_value: str, api_key: str) -> bool:
+    """Returns True iff the cookie is well-formed, signed by api_key,
+    and not older than SESSION_TTL_SECONDS."""
+    try:
+        issued_at_str, provided_digest = cookie_value.split(".", 1)
+        issued_at = int(issued_at_str)
+    except (ValueError, AttributeError):
+        return False
+    if abs(int(time.time()) - issued_at) > SESSION_TTL_SECONDS:
+        return False
+    expected = hmac.new(
+        api_key.encode(), str(issued_at).encode(), hashlib.sha256
+    ).hexdigest()[:32]
+    return hmac.compare_digest(provided_digest, expected)
