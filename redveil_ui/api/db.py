@@ -99,3 +99,13 @@ async def get_session() -> AsyncIterator[AsyncSession]:
     factory = get_session_factory()
     async with factory() as session:
         yield session
+
+
+def init_engine_for_cli() -> AsyncEngine:
+    """Build (and register) the module-level engine for CLI commands.
+
+    CLI subcommands run outside the FastAPI lifespan, so nothing has
+    created the engine yet. Returns the engine so the caller can
+    dispose() it when done.
+    """
+    return get_engine()
