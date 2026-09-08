@@ -70,3 +70,9 @@ Mockup-Redveil/*
 tests/lab/
 tests/test_e2e_lab.py
 tests/test_negative_testing.py
+
+# redveil_ui runtime artifacts (never commit)
+redveil_ui/*.db
+redveil_ui/*.db-wal
+redveil_ui/*.db-shm
+redveil_ui/data/
