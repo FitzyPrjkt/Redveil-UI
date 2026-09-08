@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from redveil_ui.api.db import DATA_DIR, Base, get_engine, get_session
 from redveil_ui.api.routes import (
     auth,
+    audit,
     checks,
     config,
     entropy,
@@ -190,3 +191,4 @@ app.include_router(issue_definitions.router, prefix="/api", tags=["issue-definit
 app.include_router(entropy.router, prefix="/api/entropy", tags=["entropy"])
 app.include_router(replay.router, prefix="/api/findings", tags=["replay"])
 app.include_router(probes.router, prefix="/api/probes", tags=["probes"])
+app.include_router(audit.router, prefix="/api/audit", tags=["audit"])
