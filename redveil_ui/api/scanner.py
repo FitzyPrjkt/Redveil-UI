@@ -42,6 +42,7 @@ from redveil.plugins.loader import build_default_registry
 
 from redveil_ui.api.models import Finding as FindingORM
 from redveil_ui.api.schemas import CheckOut
+from redveil_ui.api.db_retry import retry_on_lock
 
 if TYPE_CHECKING:
     pass
@@ -52,6 +53,40 @@ log = logging.getLogger(__name__)
 def _safe_target_name(url: str) -> str:
     """Turn a URL into a filesystem-safe directory name."""
     return url.replace("/", "_").replace(":", "_").rstrip("_") or "target"
+
+
+@retry_on_lock()
+async def _write_finding_rows(
+    session_factory: async_sessionmaker,
+    scan_id: int,
+    findings: list[Finding],
+) -> None:
+    """Insert one FindingORM row per finding and commit.
+
+    Split out of Scanner._persist_findings so the @retry_on_lock
+    decorator (Task 1.2) wraps exactly the write-heavy DB path.
+    """
+    async with session_factory() as session:
+        for f in findings:
+            row = FindingORM(
+                scan_id=scan_id,
+                wpoc_id=f.id,
+                severity=f.severity.value,
+                confidence=f.confidence.value,
+                status=f.status.value,
+                title=f.title,
+                endpoint=(
+                    f"{f.target.method} {f.target.scheme}://"
+                    f"{f.target.host}{f.target.endpoint}"
+                    if f.target
+                    else None
+                ),
+                check_id=f.check.id if f.check else None,
+                fingerprint=f.fingerprint,
+                finding_data=f.to_dict(),
+            )
+            session.add(row)
+        await session.commit()
 
 
 def _build_config(
@@ -405,28 +440,14 @@ class Scanner:
             log.warning("write_report failed for scan %s: %s", scan_id, e)
 
         # 2) DB rows — done with a fresh session.
+        # @retry_on_lock: this is the write-heavy path (one row per finding,
+        # concurrent with evidence reads) — defense-in-depth on top of WAL.
         try:
-            async with self._session_factory() as session:
-                for f in findings:
-                    row = FindingORM(
-                        scan_id=scan_id,
-                        wpoc_id=f.id,
-                        severity=f.severity.value,
-                        confidence=f.confidence.value,
-                        status=f.status.value,
-                        title=f.title,
-                        endpoint=(
-                            f"{f.target.method} {f.target.scheme}://"
-                            f"{f.target.host}{f.target.endpoint}"
-                            if f.target
-                            else None
-                        ),
-                        check_id=f.check.id if f.check else None,
-                        fingerprint=f.fingerprint,
-                        finding_data=f.to_dict(),
-                    )
-                    session.add(row)
-                await session.commit()
+            await _write_finding_rows(
+                self._session_factory,
+                scan_id=scan_id,
+                findings=findings,
+            )
         except Exception as e:
             log.warning("failed to persist findings for scan %s: %s", scan_id, e)
 
