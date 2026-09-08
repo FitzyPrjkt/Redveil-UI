@@ -12,7 +12,9 @@
 pipx install redveil-ui
 redveil-ui init
 redveil-ui start
-# open http://127.0.0.1:8000
+# open the URL printed by init (default http://127.0.0.1:<port> —
+# port may differ if 8000 was taken; check your config with:
+#   grep '^port' ~/.redveil-ui/config.yaml
 ```
 
 > **⚠️ Before you start — this runs on YOUR network**
