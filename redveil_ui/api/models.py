@@ -41,6 +41,9 @@ class Scan(Base):
     target_id: Mapped[int] = mapped_column(
         ForeignKey("targets.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    # Scan lifecycle status (0.2.0 spec §11.1): valid values are
+    # "pending" | "running" | "completed" | "failed" | "cancelled".
+    # Freeform String(32); no DB constraint. Cancelled is terminal.
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
     profile: Mapped[str] = mapped_column(String(32), nullable=False, default="passive")
     scan_type: Mapped[str] = mapped_column(String(32), nullable=False, default="standard")

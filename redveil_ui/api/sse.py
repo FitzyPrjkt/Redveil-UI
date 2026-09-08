@@ -2,6 +2,10 @@
 
 A small wrapper that turns an asyncio.Queue (or any async iterator of dicts)
 into the wire format ``data: {json}\\n\\n`` and handles client disconnects.
+
+Event types carried per-scan (spec §11.1.1 B9): ``scan.started``,
+``scan.completed``, ``scan.failed``, ``scan.cancelled`` (0.2.0),
+``check.started``, ``check.completed``, ``finding.detected``.
 """
 
 from __future__ import annotations

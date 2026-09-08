@@ -240,12 +240,22 @@ async def stream_scan(scan_id: int, request: Request, session: AsyncSession = De
 
     async def event_stream() -> AsyncIterator[bytes]:
         try:
-            # For a completed scan, the bus has no live publisher — emit
-            # the terminal snapshot from the DB so the client sees the
-            # same shape it would have seen live.
-            if scan.status in ("completed", "failed"):
+            # For a terminal-state scan, the bus has no live publisher —
+            # emit the terminal snapshot from the DB so the client sees
+            # the same shape it would have seen live. 'cancelled' is
+            # terminal too (0.2.0): it must NOT fall into the live loop
+            # or the stream would hang forever waiting for events that
+            # will never come.
+            if scan.status in ("completed", "failed", "cancelled"):
+                event_name = (
+                    "scan.completed"
+                    if scan.status == "completed"
+                    else "scan.cancelled"
+                    if scan.status == "cancelled"
+                    else "scan.failed"
+                )
                 yield format_sse(
-                    "scan.completed" if scan.status == "completed" else "scan.failed",
+                    event_name,
                     {
                         "scan_id": scan_id,
                         "status": scan.status,
