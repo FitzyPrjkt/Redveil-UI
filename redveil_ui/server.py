@@ -130,6 +130,13 @@ def run_server(config_path: str | None = None):
     config = _load_config(config_path)
     data_dir = Path(config["data_dir"])
 
+    # === Step 0: fail-closed auth check (0.2.0) ===
+    # MUST run before the listening socket is opened: a non-loopback
+    # bind without an API key in any storage location refuses to start.
+    from redveil_ui.api.auth import check_auth_or_fail  # noqa: E402
+
+    check_auth_or_fail(bind=str(config["host"]))
+
     # Set the env var BEFORE any code that imports api.db, so the
     # lazy engine picks up the right path on first get_engine() call.
     os.environ["REDVEIL_DATA_DIR"] = str(data_dir)

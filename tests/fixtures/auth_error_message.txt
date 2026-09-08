@@ -1,0 +1,13 @@
+Refusing to start: bind=0.0.0.0 requires authentication.
+
+redveil-ui will not bind to a non-loopback address without
+an API key. To fix this, do one of:
+
+  1. Set REDVEIL_UI_API_KEY environment variable, OR
+  2. Run 'redveil-ui init' to generate a key (existing
+     config is preserved), OR
+  3. Set 'auth.api_key_hash' in ~/.redveil-ui/config.yaml
+     (sha256 hex digest of the raw key).
+
+For more information, see the LAN deployment section in
+the README.
