@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from redveil_ui.api.db import DATA_DIR, Base, get_engine
 from redveil_ui.api.routes import (
+    auth,
     checks,
     config,
     entropy,
@@ -153,6 +154,8 @@ async def healthz() -> dict:
 
 
 # Routers
+# auth.router declares its own /api/auth prefix.
+app.include_router(auth.router, tags=["auth"])
 app.include_router(targets.router, prefix="/api/targets", tags=["targets"])
 app.include_router(scans.router, prefix="/api/scans", tags=["scans"])
 app.include_router(findings.router, prefix="/api/findings", tags=["findings"])
