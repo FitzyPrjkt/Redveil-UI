@@ -18,3 +18,27 @@ REDVEIL_UI_PKG = ROOT / "redveil_ui"
 for p in (str(SRC), str(REDVEIL_UI_PKG)):
     if p not in sys.path:
         sys.path.insert(0, p)
+
+
+import pytest  # noqa: E402
+import pytest_asyncio  # noqa: E402
+
+
+@pytest_asyncio.fixture
+async def session(tmp_path):
+    """A fresh AsyncSession bound to a per-test SQLite DB.
+
+    Tables are created from the redveil_ui ORM metadata. Used by the
+    0.2.0 backend tests (scan recovery, cancelled status, audit log).
+    """
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from redveil_ui.api.db import Base
+
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/test.db")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(bind=engine, expire_on_commit=False, autoflush=False)
+    async with factory() as s:
+        yield s
+    await engine.dispose()

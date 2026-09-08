@@ -17,6 +17,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from redveil_ui.api.db import DATA_DIR, Base, get_engine
 from redveil_ui.api.routes import (
@@ -63,6 +64,20 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     log.info("DB schema initialized at %s", engine.url)
+
+    # Recovery sweep (0.2.0): any scan left 'running' by a previous
+    # unclean shutdown is transitioned to 'failed' BEFORE the app
+    # accepts requests, so the dashboard never shows a dead scan as
+    # live.
+    from redveil_ui.api.scan_recovery import recover_orphan_scans
+
+    recovery_factory = async_sessionmaker(
+        bind=engine, expire_on_commit=False, autoflush=False
+    )
+    async with recovery_factory() as session:
+        recovered = await recover_orphan_scans(session)
+    if recovered:
+        log.warning("recovered %d orphan scan(s) at startup", recovered)
 
     # Stash the Scanner on app state so route modules can find it.
     # The Scanner builds the plugin registry internally (cacheable on
