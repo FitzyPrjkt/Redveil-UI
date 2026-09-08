@@ -95,3 +95,30 @@ async def _seed_probe_target():
                 )
             )
             await s.commit()
+
+
+VALID_SCAN_STATUSES = ("pending", "running", "completed", "failed", "cancelled")
+
+
+@pytest_asyncio.fixture
+def sample_scans():
+    """One scan per valid status via the APP's engine (spec §14.2.1).
+
+    Returns {status: scan_id}. The insert uses asyncio.run on its own
+    loop because TestClient tests run the app on a different loop.
+    """
+    import asyncio as _asyncio
+
+    from redveil_ui.api.db import get_session_factory
+    from redveil_ui.api.models import Scan
+
+    async def _make(status: str) -> int:
+        factory = get_session_factory()
+        async with factory() as s:
+            scan = Scan(target_id=1, status=status, profile="passive")
+            s.add(scan)
+            await s.commit()
+            await s.refresh(scan)
+            return scan.id
+
+    return {status: _asyncio.run(_make(status)) for status in VALID_SCAN_STATUSES}
