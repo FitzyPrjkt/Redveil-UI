@@ -20,12 +20,13 @@ app = typer.Typer(
 def init(
     port: Optional[int] = typer.Option(None, "--port", "-p", help="Backend port (default: 8000)"),
     data_dir: Optional[str] = typer.Option(None, "--data-dir", help="Data directory (default: ~/.redveil-ui/data)"),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Skip DWYOR confirmation"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip DWYOR + LAN exposure confirmations"),
     config: Optional[str] = typer.Option(None, "--config", help="Path to config file (default: ~/.redveil-ui/config.yaml)"),
+    bind: Optional[str] = typer.Option(None, "--bind", help="Bind address (default: 127.0.0.1; non-loopback triggers the LAN exposure warning)"),
 ):
     """First-run setup: pick port, generate config, initialize database."""
     from redveil_ui.first_run import run_init
-    run_init(port=port, data_dir=data_dir, skip_dwyor=yes, config_path=config)
+    run_init(port=port, data_dir=data_dir, skip_dwyor=yes, config_path=config, bind=bind, yes=yes)
 
 
 @app.command()

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 import socket
+from datetime import datetime, timezone
 from pathlib import Path
 
 import typer
@@ -65,11 +66,60 @@ def _generate_or_load_api_key(config_dir: Path) -> str | None:
     return key
 
 
+LAN_WARNING_TEXT = """[yellow]⚠️  You are configuring redveil-ui for LAN exposure.
+
+   In this mode, every request reaches the server over your
+   network without encryption (unless a reverse proxy terminates
+   TLS in front). The session cookie is transmitted in plaintext
+   on the LAN. This is acceptable for trusted home/lab networks
+   and not acceptable for public WiFi, conferences, or shared
+   LANs with untrusted users.
+
+   (Advanced: you can add HTTPS in front of redveil-ui using
+   Caddy or Traefik — see the "LAN deployment" section in the
+   README for the one-line config. The browser will then show
+   the lock icon and cookies are encrypted on the wire.)
+[/yellow]"""
+
+
+def _maybe_warn_lan_exposure(
+    bind: str, config_dir: Path, port: int, yes: bool
+) -> None:
+    """Gate non-loopback binds behind a Y/n confirmation + audit trail.
+
+    - Loopback binds: no-op (0.1.x behavior preserved).
+    - Non-loopback with --yes: no prompt, security.log gets
+      source=auto_acknowledged.
+    - Non-loopback interactive: spec §6.6 warning text, Y/n prompt;
+      declining aborts init via SystemExit before any config write.
+    """
+    if bind in {"127.0.0.1", "::1", "localhost"}:
+        return
+
+    if not yes:
+        console.print(LAN_WARNING_TEXT)
+        if not Confirm.ask("Continue with LAN exposure?", default=False):
+            raise SystemExit("LAN exposure not confirmed. Aborting init.")
+        source = "interactive"
+    else:
+        source = "auto_acknowledged"
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    with (config_dir / "security.log").open("a") as f:
+        f.write(
+            f"{timestamp} LAN_EXPOSURE_CONFIRMED "
+            f"user={os.getenv('USER', 'unknown')} "
+            f"bind={bind} port={port} source={source}\n"
+        )
+
+
 def run_init(
     port: int | None,
     data_dir: str | None,
     skip_dwyor: bool,
     config_path: str | None,
+    bind: str | None = None,
+    yes: bool = False,
 ):
     # 1. Resolve config location (FIXED, regardless of --data-dir).
     # The data_dir is stored INSIDE the config, not used to compute
@@ -96,6 +146,14 @@ def run_init(
         console.print(
             f"[yellow]Port {preferred} in use, using {chosen_port}.[/yellow]"
         )
+
+    # 3a. LAN exposure gate (0.2.0): any non-loopback bind requires an
+    # explicit Y/n confirmation and a security.log audit entry. Must run
+    # BEFORE config is written so a declined confirmation aborts cleanly.
+    effective_bind = bind if bind is not None else DEFAULT_HOST
+    _maybe_warn_lan_exposure(
+        bind=effective_bind, config_dir=cfg_path.parent, port=chosen_port, yes=yes
+    )
 
     # 4. DWYOR acknowledgement
     if not skip_dwyor:
