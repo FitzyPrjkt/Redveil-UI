@@ -27,12 +27,57 @@ log = logging.getLogger(__name__)
 
 router = APIRouter()
 
+# Registry of in-flight scan tasks (0.2.0 Task 4.2). Maps scan_id to the
+# asyncio.Task driving the orchestrator so /cancel can signal it. The
+# library-level cancel signal (Orchestrator.request_cancel) does not
+# exist yet — this UI-layer task.cancel() is the documented fallback
+# (ledger Ruling #1). Findings captured before cancellation are still
+# persisted: _drive_scan's finally-block writes the DB row regardless.
+_SCAN_TASKS: dict[int, "asyncio.Task"] = {}
+
 
 async def _get_scanner(request: Request):
     scanner = getattr(request.app.state, "scanner", None)
     if scanner is None:
         raise HTTPException(status_code=503, detail="scanner not initialized")
     return scanner
+
+
+# --- Scan task registry (0.2.0 Task 4.2) -----------------------------------
+
+
+def _register_scan_task(scan_id: int, task: "asyncio.Task") -> None:
+    """Track the driving task for a scan so /cancel can signal it."""
+    _SCAN_TASKS[scan_id] = task
+
+
+def _pop_scan_task(scan_id: int) -> "asyncio.Task | None":
+    return _SCAN_TASKS.pop(scan_id, None)
+
+
+def _terminal_state_error(scan: Scan, action: str) -> HTTPException:
+    """409 body for start/cancel against a terminal-state scan.
+
+    Includes the scan's original started/completed timestamps so the
+    operator can see WHEN it finished (spec §5.5 / §14.2) — a bare
+    conflict leaves them confused about why the action was rejected.
+    Start conflicts also point the operator at the correct action.
+    """
+    started = scan.started_at.isoformat() if scan.started_at else "unknown"
+    completed = scan.completed_at.isoformat() if scan.completed_at else "unknown"
+    guidance = (
+        "Create a new scan instead via POST /api/scans."
+        if action == "restart"
+        else ""
+    )
+    return HTTPException(
+        status_code=409,
+        detail=(
+            f"scan is in terminal state '{scan.status}' "
+            f"(started {started}, completed {completed}); "
+            f"cannot {action} a finished scan. {guidance}".rstrip()
+        ),
+    )
 
 
 @router.post("", response_model=ScanStatus, status_code=status.HTTP_202_ACCEPTED)
@@ -94,7 +139,7 @@ async def create_scan(
 
     # Kick off the orchestrator in the background.
     scanner = await _get_scanner(request)
-    asyncio.create_task(
+    task = asyncio.create_task(
         _drive_scan(
             scanner=scanner,
             scan_id=scan.id,
@@ -107,6 +152,7 @@ async def create_scan(
             gate_mode=body.gate_mode,
         )
     )
+    _register_scan_task(scan.id, task)
 
     return ScanStatus(
         id=scan.id,
@@ -169,6 +215,24 @@ async def _drive_scan(
                     (event.get("data") or {}).get("error")
                     or "scan failed"
                 )
+    except asyncio.CancelledError:
+        # 0.2.0 /cancel path: task.cancel() lands here. Re-raise so the
+        # task actually ends cancelled (awaiting code sees the real
+        # state), but first mark the row so it doesn't linger as a
+        # phantom 'running' orphan — the recovery sweep is for CRASHES,
+        # not operator-initiated cancels.
+        await bus.publish(
+            scan_id,
+            {"event": "scan.cancelled", "data": {"scan_id": scan_id}},
+        )
+        async with factory() as session:
+            scan = await session.get(Scan, scan_id)
+            if scan is not None and scan.status == "running":
+                scan.status = "cancelled"
+                scan.completed_at = datetime.now(UTC)
+                scan.error = "cancelled by operator"
+                await session.commit()
+        raise
     except Exception as e:  # noqa: BLE001
         final_error = str(e)
         await bus.publish(
@@ -217,6 +281,90 @@ async def get_scan(scan_id: int, session: AsyncSession = Depends(get_session)) -
     if scan is None:
         raise HTTPException(status_code=404, detail="scan not found")
     return scan
+
+
+# --- Scan control (0.2.0 Task 4.2, spec §5.5 response matrix) ---------------
+
+
+@router.post("/{scan_id}/start")
+async def start_scan(
+    scan_id: int,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+):
+    """Start a scan previously created in 'pending' state.
+
+    Idempotent for 'running' (200 + idempotent flag). Terminal states
+    are 409 Conflict — a finished scan cannot be restarted; create a
+    new scan via POST /api/scans instead.
+    """
+    scan = await session.get(Scan, scan_id)
+    if scan is None:
+        raise HTTPException(status_code=404, detail="scan not found")
+
+    if scan.status == "running":
+        return {"status": "running", "scan_id": scan_id, "idempotent": True}
+    if scan.status in ("completed", "failed", "cancelled"):
+        raise _terminal_state_error(scan, "restart")
+
+    target = await session.get(Target, scan.target_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="target not found")
+
+    scanner = await _get_scanner(request)
+    task = asyncio.create_task(
+        _drive_scan(
+            scanner=scanner,
+            scan_id=scan.id,
+            target_url=target.url,
+            target_name=target.name,
+            scope_yaml=target.scope_yaml,
+            profile=scan.profile,
+            max_destructive_level=scan.max_destructive_level,
+            allow_destructive=scan.allow_destructive,
+            gate_mode=scan.gate_mode,
+        )
+    )
+    _register_scan_task(scan.id, task)
+    return {"status": "running", "scan_id": scan_id}
+
+
+@router.post("/{scan_id}/cancel")
+async def cancel_scan(
+    scan_id: int,
+    session: AsyncSession = Depends(get_session),
+):
+    """Signal the orchestrator to cancel an in-flight scan.
+
+    Response matrix (spec §5.5): 202 Accepted when the cancel signal is
+    dispatched to a running/pending scan; 200 OK with "idempotent": true
+    when the scan is already cancelled; 409 Conflict with timestamps for
+    any other terminal state (the action had no effect — there was
+    nothing to cancel).
+    """
+    scan = await session.get(Scan, scan_id)
+    if scan is None:
+        raise HTTPException(status_code=404, detail="scan not found")
+
+    if scan.status == "cancelled":
+        return {"status": "cancelled", "scan_id": scan_id, "idempotent": True}
+    if scan.status in ("completed", "failed"):
+        raise _terminal_state_error(scan, "cancel")
+
+    task = _pop_scan_task(scan_id)
+    if task is not None and not task.done():
+        task.cancel()
+
+    # Cancel of a PENDING scan has no task to signal — mark the row
+    # directly so the operator's intent lands. For RUNNING scans,
+    # _drive_scan's CancelledError path marks the row.
+    if scan.status == "pending":
+        scan.status = "cancelled"
+        scan.completed_at = datetime.now(UTC)
+        scan.error = "cancelled before start"
+        await session.commit()
+
+    return {"status": "cancelled", "scan_id": scan_id}
 
 
 @router.get("/{scan_id}/stream")
