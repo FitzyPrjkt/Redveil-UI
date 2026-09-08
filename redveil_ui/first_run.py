@@ -43,6 +43,28 @@ def find_free_port(preferred: int) -> int:
     raise RuntimeError("No free port in 1..65534")
 
 
+def _generate_or_load_api_key(config_dir: Path) -> str | None:
+    """Generate a new API key, or load the existing one from .api_key.
+
+    Idempotent: re-running init preserves the existing key.
+    Returns None only if generation is impossible (extremely unlikely);
+    callers treat None as "no auth material this run".
+    """
+    import secrets
+
+    api_key_file = config_dir / ".api_key"
+    if api_key_file.is_file():
+        try:
+            return api_key_file.read_text().strip()
+        except OSError:
+            return None
+
+    key = "rvui_" + secrets.token_hex(16)
+    api_key_file.write_text(key)
+    api_key_file.chmod(0o600)
+    return key
+
+
 def run_init(
     port: int | None,
     data_dir: str | None,
@@ -101,7 +123,26 @@ def run_init(
         "max_destructive_level": DEFAULT_MAX_DESTRUCTIVE_LEVEL,
         "allow_destructive": DEFAULT_ALLOW_DESTRUCTIVE,
     }
+
+    # 5a. API key (0.2.0): generate on first init, reuse thereafter.
+    # Raw key lives in <config_dir>/.api_key (mode 0600); the config
+    # carries only the sha256 hash for validation. The raw key is
+    # displayed once at generation time.
+    import hashlib
+    import secrets
+
+    api_key = _generate_or_load_api_key(cfg_path.parent)
+    if api_key is not None:
+        config["auth"] = {
+            "api_key_hash": "sha256:"
+            + hashlib.sha256(api_key.encode()).hexdigest(),
+        }
+
     cfg_path.write_text(yaml.safe_dump(config))
+    if api_key is not None:
+        console.print(
+            f"  API key:   {api_key}  [yellow](shown once — save it now)[/yellow]"
+        )
 
     # 6. Initialize DB schema
     # Set the env var BEFORE importing api.db so the lazy engine
