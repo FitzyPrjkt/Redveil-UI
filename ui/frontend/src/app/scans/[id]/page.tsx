@@ -2,11 +2,12 @@
 
 import { use, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   IconAlertTriangle,
   IconCheck,
   IconCircleCheck,
+  IconCircleMinus,
   IconExternalLink,
   IconLoader2,
 } from "@tabler/icons-react";
@@ -18,7 +19,7 @@ import { apiGet } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 type Severity = "critical" | "high" | "medium" | "low" | "info";
-type ScanStatus = "pending" | "running" | "completed" | "failed";
+type ScanStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
 type Tab = "findings" | "sitemap" | "evidence";
 
 interface Scan {
@@ -78,6 +79,8 @@ function statusClass(status: string): string {
       return "bg-sky-500/15 text-sky-300 border-sky-500/30";
     case "failed":
       return "bg-red-500/15 text-red-300 border-red-500/30";
+    case "cancelled":
+      return "bg-amber-500/15 text-amber-300 border-amber-500/30";
     case "pending":
       return "bg-zinc-700/40 text-zinc-300 border-zinc-600/30";
     default:
@@ -86,12 +89,17 @@ function statusClass(status: string): string {
 }
 
 export default function ScanDetailPage({
-  params,
+  params: _unusedParams,
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const { id } = use(params);
-  const scanId = Number(id);
+  // See findings/[wpoc_id]/page.tsx for the full rationale. With
+  // `output: "export"` and a single `_` placeholder, useParams() for
+  // the id returns the baked "_" value forever. Read the live URL
+  // via usePathname() and parse the segment.
+  void _unusedParams;
+  const pathname = usePathname() ?? "";
+  const scanId = Number(pathname.split("/").filter(Boolean)[1] ?? "");
   const router = useRouter();
 
   const [scan, setScan] = useState<Scan | null>(null);
@@ -178,6 +186,8 @@ export default function ScanDetailPage({
 
   const isRunning = scan.status === "running";
   const isFailed = scan.status === "failed";
+  const isCancelled = scan.status === "cancelled";
+  const isCancelling = false; // future: set true while the cancel request is in flight
 
   return (
     <div className="space-y-8" data-testid="scan-detail">
@@ -233,6 +243,26 @@ export default function ScanDetailPage({
               <strong className="text-red-200">Scan failed.</strong> {scan.error}
             </span>
           </div>
+        ) : null}
+        {isCancelled ? (
+          <div
+            role="status"
+            data-testid="scan-cancelled"
+            className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-300"
+          >
+            <IconCircleMinus
+              size={16}
+              className="mt-0.5 shrink-0"
+              aria-hidden="true"
+            />
+            <span>
+              <strong className="text-amber-200">Scan cancelled.</strong>{" "}
+              {scan.error ?? "Cancelled by operator."}
+            </span>
+          </div>
+        ) : null}
+        {isRunning && !isCancelling ? (
+          <CancelScanButton scanId={scan.id} />
         ) : null}
       </header>
 
@@ -420,5 +450,66 @@ function SeverityTile({
         </div>
       </CardContent>
     </Card>
+  );
+}
+function CancelScanButton({ scanId }: { scanId: number }) {
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const cancel = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/scans/${scanId}/cancel`, { method: "POST" });
+      if (!res.ok && res.status !== 409) {
+        const body = (await res.json().catch(() => ({}))) as { detail?: string };
+        setError(body.detail ?? `HTTP ${res.status}`);
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!confirming) {
+    return (
+      <Button
+        variant="outline"
+        data-testid="scan-cancel-button"
+        onClick={() => setConfirming(true)}
+        className="border-amber-500/30 text-amber-300 hover:bg-amber-500/10"
+      >
+        Cancel scan
+      </Button>
+    );
+  }
+  return (
+    <div className="flex flex-wrap items-center gap-2" data-testid="scan-cancel-confirm">
+      <span className="text-sm text-amber-300">Cancel this scan?</span>
+      <Button
+        variant="outline"
+        disabled={busy}
+        data-testid="scan-cancel-confirm-yes"
+        onClick={cancel}
+        className="border-amber-500/40 text-amber-200 hover:bg-amber-500/10"
+      >
+        {busy ? "Cancelling…" : "Yes, cancel it"}
+      </Button>
+      <Button
+        variant="ghost"
+        disabled={busy}
+        data-testid="scan-cancel-confirm-no"
+        onClick={() => setConfirming(false)}
+      >
+        Keep running
+      </Button>
+      {error ? (
+        <span role="alert" className="text-xs text-red-300">
+          {error}
+        </span>
+      ) : null}
+    </div>
   );
 }

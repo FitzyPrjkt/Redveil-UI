@@ -9,7 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { apiGet } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-type ScanStatus = "pending" | "running" | "completed" | "failed";
+type ScanStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
 
 interface Scan {
   id: number;
@@ -32,7 +32,7 @@ interface Target {
   name: string | null;
 }
 
-type Filter = "all" | "running" | "completed" | "failed";
+type Filter = "all" | "running" | "completed" | "failed" | "cancelled";
 
 function statusClass(status: string): string {
   switch (status) {
@@ -42,6 +42,8 @@ function statusClass(status: string): string {
       return "bg-sky-500/15 text-sky-300 border-sky-500/30";
     case "failed":
       return "bg-red-500/15 text-red-300 border-red-500/30";
+    case "cancelled":
+      return "bg-amber-500/15 text-amber-300 border-amber-500/30";
     case "pending":
       return "bg-zinc-700/40 text-zinc-300 border-zinc-600/30";
     default:
@@ -162,7 +164,7 @@ export default function ScanHistoryPage() {
           className="h-10 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-4 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-zinc-500 focus:outline-none"
         />
         <div role="tablist" className="flex flex-wrap gap-2">
-          {(["all", "running", "completed", "failed"] as Filter[]).map(
+          {(["all", "running", "completed", "failed", "cancelled"] as Filter[]).map(
             (f) => (
               <button
                 key={f}

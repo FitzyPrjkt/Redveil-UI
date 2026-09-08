@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   IconCircleCheck,
   IconCircleDot,
+  IconCircleMinus,
   IconCircleX,
   IconClock,
 } from "@tabler/icons-react";
@@ -18,7 +19,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { apiGet } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-type ScanStatus = "pending" | "running" | "completed" | "failed";
+type ScanStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
 
 interface Scan {
   id: number;
@@ -81,6 +82,12 @@ function statusVariant(status: string) {
         className: "bg-red-500/10 text-red-400 border-red-500/20",
         label: "failed",
         Icon: IconCircleX,
+      };
+    case "cancelled":
+      return {
+        className: "bg-amber-500/10 text-amber-400 border-amber-500/20",
+        label: "cancelled",
+        Icon: IconCircleMinus,
       };
     case "pending":
     default:
