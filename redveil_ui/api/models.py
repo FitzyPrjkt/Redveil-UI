@@ -91,3 +91,26 @@ class Finding(Base):
         Index("idx_findings_scan", "scan_id"),
         Index("idx_findings_wpoc", "wpoc_id"),
     )
+
+
+class AuditLog(Base):
+    """Append-only operator-action audit trail (0.2.0 spec §7.2).
+
+    Durable + queryable, distinct from the transient SSE stream. There
+    is no UI/API delete path: the ONLY deletion is `redveil-ui auth
+    audit-rotate` (retention window), which logs itself here.
+    """
+
+    __tablename__ = "audit_log"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    ts: Mapped[str] = mapped_column(String(32), nullable=False)  # ISO 8601 UTC
+    actor: Mapped[str] = mapped_column(String(64), nullable=False)
+    action: Mapped[str] = mapped_column(String(64), nullable=False)
+    target_kind: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    target_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    request_meta: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON
+    result: Mapped[str] = mapped_column(String(16), nullable=False)
+    deny_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (Index("idx_audit_ts", "ts"),)
