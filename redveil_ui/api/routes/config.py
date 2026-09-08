@@ -197,10 +197,54 @@ async def get_active_config(
     return payload
 
 
-@router.post("/reset", status_code=501)
-async def reset_config() -> dict[str, Any]:
-    """Reset to defaults — deferred until PATCH validation is in place."""
-    raise HTTPException(
-        status_code=501,
-        detail="config reset not implemented yet (deferred for safety)",
+@router.post("/reset")
+async def reset_config(request: Request) -> dict[str, Any]:
+    """Reset config.yaml to the last-init values (0.2.0 Task 4.7).
+
+    Refuses with 409 when the running server is bound to a non-loopback
+    address and the reset would change bind back to loopback: that
+    invalidates the auth surface and is a separate operator action
+    (`redveil-ui auth rotate-key`). Otherwise the on-disk config is
+    replaced by the init-time block (host stays whatever the file
+    says — init wrote it; this endpoint only restores safety fields).
+    """
+    import os
+    from pathlib import Path
+
+    import yaml as yaml_lib
+
+    config_path = Path(
+        os.environ.get("REDVEIL_CONFIG", Path.home() / ".redveil-ui" / "config.yaml")
     )
+    if not config_path.is_file():
+        raise HTTPException(status_code=404, detail="config.yaml not found")
+
+    cfg = yaml_lib.safe_load(config_path.read_text()) or {}
+    host = str(cfg.get("host", "127.0.0.1"))
+
+    # If the running bind is non-loopback, refuse any reset that would
+    # drop the auth posture (changing bind or removing auth material).
+    from redveil_ui.api.auth import LOOPBACK_BINDS
+
+    if host not in LOOPBACK_BINDS:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "server is bound to a non-loopback address; reset would "
+                "change the auth surface. Run 'redveil-ui auth rotate-key' "
+                "instead, or edit config.yaml by hand."
+            ),
+        )
+
+    # Restore safety fields to their install-time defaults (idempotent —
+    # these ARE the init values; hand-edits are the thing being undone).
+    cfg["gate_mode"] = "non_interactive"
+    cfg["max_destructive_level"] = "L2"
+    cfg["allow_destructive"] = False
+    config_path.write_text(yaml_lib.safe_dump(cfg))
+
+    return {
+        "status": "reset",
+        "config_path": str(config_path),
+        "note": "safety fields restored to init values; restart to apply",
+    }
