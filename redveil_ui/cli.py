@@ -44,3 +44,9 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+# Sub-apps (registered after app definition; keep cli.py thin)
+from redveil_ui.cli_auth import auth_app  # noqa: E402
+
+app.add_typer(auth_app, name="auth")
