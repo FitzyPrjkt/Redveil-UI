@@ -240,3 +240,42 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         for name, value in SECURITY_HEADERS.items():
             response.headers.setdefault(name, value)
         return response
+
+
+# --- Rate limiting (0.2.0 Phase 6, spec §7.1) --------------------------------
+
+import os as _os  # noqa: E402
+
+from slowapi import Limiter  # noqa: E402
+from slowapi.util import get_remote_address  # noqa: E402
+
+
+def _client_ip(request: Request) -> str:
+    """Client IP for rate limiting, distrusting X-Forwarded-For by default.
+
+    Only trusted proxies (default: loopback) may set XFF — an attacker
+    on the LAN must not be able to rotate their apparent IP to dodge
+    the per-IP bucket.
+    """
+    trusted = {
+        s.strip()
+        for s in _os.environ.get("REDVEIL_TRUSTED_PROXIES", "127.0.0.1,::1").split(",")
+        if s.strip()
+    }
+    direct = request.client.host if request.client else "unknown"
+    if direct in trusted:
+        xff = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+        if xff:
+            return xff
+    return direct
+
+
+limiter = Limiter(
+    key_func=_client_ip,
+    default_limits=[_os.environ.get("REDVEIL_RATE_LIMIT_DEFAULT", "60/minute")],
+)
+
+
+def reset_rate_limiter_for_tests() -> None:
+    """Clear in-memory buckets (test isolation — see tests/test_rate_limit.py)."""
+    limiter.reset()

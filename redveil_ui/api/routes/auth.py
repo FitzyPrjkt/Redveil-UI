@@ -12,8 +12,12 @@ from pydantic import BaseModel
 from typing import Optional
 
 from redveil_ui.api.auth import _resolve_api_key, issue_session_cookie
+from redveil_ui.api.middleware import limiter
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+# Brute-force damping (spec §7.1): 5/min/IP on login.
+LOGIN_RATE_LIMIT = "5/minute"
 
 
 class LoginIn(BaseModel):
@@ -28,6 +32,7 @@ def _effective_scheme(request: Request) -> str:
 
 
 @router.post("/login")
+@limiter.limit(LOGIN_RATE_LIMIT)
 def login(request: Request, body: LoginIn | None = None):
     expected = _resolve_api_key()
     if expected is None:
