@@ -54,11 +54,15 @@ _session_factory: async_sessionmaker[AsyncSession] | None = None
 
 
 def _build_engine() -> AsyncEngine:
-    return create_async_engine(
+    engine = create_async_engine(
         DATABASE_URL,
         echo=False,
         future=True,
     )
+    # WAL + busy_timeout on every new connection (0.2.0 reliability work).
+    from redveil_ui.api.db_wal import register_wal_pragma
+    register_wal_pragma(engine)
+    return engine
 
 
 def get_engine() -> AsyncEngine:
