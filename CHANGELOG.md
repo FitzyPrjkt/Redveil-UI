@@ -1,5 +1,60 @@
 # Changelog
 
+## redveil-ui 0.2.0 — 2026-09-08
+
+### added
+- **Opt-in LAN auth (fail-closed)**: non-loopback bind without an API
+  key refuses to start (`AuthConfigError`). Key resolution: env
+  `REDVEIL_UI_API_KEY` → `~/.redveil-ui/.api_key` (0600) →
+  `auth.api_key_hash` in config. `init` generates the key + LAN
+  exposure warning (Y/n, `security.log` audit entry);
+  `redveil-ui auth rotate-key` invalidates all sessions.
+- **Auth flow**: HMAC session cookie (HttpOnly, SameSite=Strict,
+  24 h TTL, conditional Secure) + `X-API-Key` header; `AuthMiddleware`
+  short-circuits loopback; destructive actions (active profile, L3+,
+  custom probes) require auth on LAN.
+- **Scan control**: `POST /api/scans/{id}/start` + `/cancel`
+  (spec §5.5 response matrix: 202 / 200 idempotent / 409 with
+  timestamps); new `cancelled` terminal status across DB, SSE
+  (`scan.cancelled`), and dashboard (amber badge, distinct banner,
+  two-step Cancel button, History filter chip).
+- **Reliability**: SQLite WAL + `busy_timeout=5000` +
+  `synchronous=NORMAL` on every connection; `retry_on_lock`
+  decorator on write-heavy paths; startup recovery sweep for orphan
+  `'running'` scans.
+- **Audit log**: append-only `audit_log` + `AuditLogMiddleware`
+  (scan.create/start/cancel, probe.custom, target.delete) +
+  `GET /api/audit` + `redveil-ui auth audit-rotate` (90 d retention,
+  logs itself).
+- **Security headers**: CSP + nosniff + DENY + no-referrer +
+  Permissions-Policy on every response.
+- **Rate limiting** (slowapi): 60/min default per IP, 5/min on login;
+  `X-Forwarded-For` honored only from trusted proxies.
+- **`/healthz`** now reports per-status scan counts
+  (`scans_pending|running|completed|failed|cancelled`) + db check.
+- **`POST /api/config/reset`** (replaces 501 stub): restores safety
+  fields; 409 on non-loopback bind.
+- **Findings page** (`/findings`) with the false-positive toggle
+  deferred from 0.1.x (localStorage-persisted, muted "Suppressed"
+  badge).
+
+### changed
+- Install snippet no longer hardcodes port 8000 (init picks the next
+  free port; README explains how to check the configured port).
+- Version strings unified to 0.2.0 across pyproject, package
+  `__init__`, FastAPI app + `/api/info`, and frontend package.json.
+- New dependency: `slowapi>=0.1.9`.
+
+### migration (0.1.x → 0.2.0)
+- No action required if you stay on localhost (default). Existing
+  configs are valid; the `auth` config section is optional and its
+  absence means loopback-only behavior. The `audit_log` table is
+  created automatically on first startup; orphan `'running'` scans
+  from a previous crash transition to `failed` once at startup.
+
+Spec: `docs/superpowers/specs/2026-09-07-redveil-ui-0.2.0-design.md` ·
+Plan: `docs/superpowers/plans/2026-09-07-redveil-ui-0.2.0.md`.
+
 ## 1.9.5 — 2026-09-01
 
 ### changed

@@ -91,7 +91,7 @@ Submitting creates the target row **and** starts the scan in one POST pair; the 
 
 The high-traffic page during a scan. Three things stream in:
 
-1. **Status pill** (top): `pending` → `running` → `completed` / `failed`.
+1. **Status pill** (top): `pending` → `running` → `completed` / `failed` / `cancelled`.
 2. **Findings list** (mid): populates as the orchestrator emits them. Each row has severity, confidence, title, endpoint, and a `View` link.
 3. **Event log** (right rail): per-action decisions from the `ActionGate` (auto-approve, denied, etc).
 
@@ -101,7 +101,7 @@ SSE connection: `GET /api/scans/{id}/stream` emits one event per orchestrator ac
 
 ![Scan History](https://raw.githubusercontent.com/FitzyPrjkt/Redveil-UI/main/Mockup-Redveil/PYPI-shots/04-scans-list.png)
 
-List of every scan the operator has run, ordered newest first. Filters: status (`all` / `running` / `completed` / `failed`) and free-text search across target URL + name. Click any row to go to that scan's detail page.
+List of every scan the operator has run, ordered newest first. Filters: status (`all` / `running` / `completed` / `failed` / `cancelled`) and free-text search across target URL + name. Click any row to go to that scan's detail page.
 
 Stat tiles at the top show total scans, running count, and 7-day finding count. Empty state prompts the operator to start a new scan.
 
@@ -279,18 +279,83 @@ fail-fast at startup if it isn't.
 
 ---
 
+## deployment modes (0.2.0)
+
+### Localhost (default)
+
+Bind `127.0.0.1`, no auth, single operator — the 0.1.x behavior,
+unchanged. Nothing to configure.
+
+### LAN opt-in
+
+Expose the dashboard to your local network. Three steps:
+
+1. Set a non-loopback bind: `redveil-ui init --bind 0.0.0.0` (or edit
+   `host:` in `~/.redveil-ui/config.yaml`). `init` shows a Y/n warning
+   and records your confirmation in `security.log`.
+2. Set an API key. `init` generates one automatically
+   (`rvui_…`, shown **once** — save it). Three storage locations are
+   honored, first match wins:
+   `REDVEIL_UI_API_KEY` env var → `~/.redveil-ui/.api_key` file
+   (mode 0600) → `auth.api_key_hash` in config.yaml.
+3. Start. The server **refuses to start** (`AuthConfigError`, exit 1)
+   on a non-loopback bind without a key in any of the three locations.
+
+Auth rules on LAN:
+
+- **Destructive actions require auth** — creating an `active`-profile
+  or L3+ scan, running a custom probe, deleting a target. Without a
+  valid cookie or `X-API-Key` header these return `401`.
+- **Passive reads stay open** — viewing the dashboard, listing scans
+  and findings, `/healthz`.
+- **Browser** logs in via `POST /api/auth/login` (HttpOnly cookie,
+  SameSite=Strict, 24 h TTL; `Secure` is set automatically when the
+  request is HTTPS or arrives via a TLS-terminating proxy).
+- **CLI / curl** sends `-H "X-API-Key: rvui_…"`.
+- Rotate the key with `redveil-ui auth rotate-key` — this instantly
+  invalidates every existing session.
+- Rate limits apply on LAN: 60 req/min per IP generally, 5 req/min on
+  login (brute-force damping).
+
+**Plaintext limitation:** without a reverse proxy the session cookie
+travels unencrypted on the LAN. That is acceptable on trusted
+home/lab networks and NOT acceptable on public WiFi, conferences, or
+shared LANs.
+
+### Multi-user / public network (out of scope)
+
+redveil-ui is a single-operator tool. For team or untrusted-network
+deployments, put a reverse proxy in front (Caddy or Traefik
+terminating TLS, plus Authelia/Authentik for identity) and keep
+redveil-ui bound to loopback — its own auth is then bypassed
+entirely and the proxy handles access control.
+
+---
+
 ## status & roadmap
 
-**0.1.0 is feature-complete for the documented surface.** All 15
-routes render, all major actions work, 1101/1101 library tests pass,
-19/19 dashboard e2e tests pass on a fresh install in a clean venv.
+**0.2.0 adds reliability hardening, opt-in LAN auth, scan control,
+and an audit trail** on top of the 0.1.x feature set:
+
+- **SQLite WAL** mode + `busy_timeout=5000` + retry-on-lock on
+  write-heavy paths, and a startup recovery sweep that fails orphan
+  `'running'` scans from a previous crash.
+- **LAN auth** (opt-in, fail-closed) as described above, plus
+  `/api/auth/login` + `/logout`.
+- **Scan control**: `POST /api/scans/{id}/start` and
+  `POST /api/scans/{id}/cancel`, with a new `cancelled` terminal
+  status surfaced across the API, SSE stream, and dashboard.
+- **Audit log**: append-only `audit_log` table + `GET /api/audit` +
+  `redveil-ui auth audit-rotate` (90-day retention).
+- **Security headers** (CSP, nosniff, DENY, Referrer-Policy,
+  Permissions-Policy) on every response, both modes.
+- **Findings page** with the false-positive toggle that 0.1.x
+  deferred.
 
 ### known limitations (roadmap, not blockers)
 
-- **`false_positive` UI toggle** — the API endpoint filters false positives by default with `?include_fp=true` opt-in, but the dashboard's Findings list doesn't expose the toggle yet. Filed for 0.2.0.
-- **SQLite WAL mode + startup recovery sweep** — single-writer SQLite can lock under heavy write loads. No retry-on-lock in the current scanner. A WAL mode + `busy_timeout=5000` event-listener + startup-recovery sweep for orphan `'running'` scans is filed for 0.2.0.
 - **`max_requests` UI in scan list** — server-side cap (`Field(gt=0, le=100000)`) is enforced; per-scan row display in `/scans` doesn't surface it. Cosmetic.
-- **Empty-state contract** — list endpoints return `[]` for empty DB; `/api/scans/{id}/evidence` returns `404` (not `[]`) for an unknown scan id. UI handles both. Maybe align to `[]` in 0.2.0.
+- **Empty-state contract** — list endpoints return `[]` for empty DB; `/api/scans/{id}/evidence` returns `404` (not `[]`) for an unknown scan id. UI handles both. Maybe align in 0.3.0.
 - **e2e_lab + negative_testing tests** are backend integration tests shipped with the `redveil` library. They run cleanly (`8 + 4 = 12 pass`) and are listed in the library's CI, not the dashboard's acceptance criteria.
 
 ### security posture (relevant for review)

@@ -106,7 +106,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(
     title="redveil-ui API",
     description="FastAPI backend for the redveil-ui security scanner UI.",
-    version="0.1.0",
+    version="0.2.0",
     lifespan=lifespan,
 )
 
@@ -152,7 +152,7 @@ async def api_info() -> dict:
     """
     return {
         "service": "redveil-ui-api",
-        "version": "0.1.0",
+        "version": "0.2.0",
         "endpoints": [
             "/api/targets",
             "/api/scans",

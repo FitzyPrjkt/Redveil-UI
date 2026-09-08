@@ -519,3 +519,24 @@ non-destructive, evidence-rich reports.
 For architecture and internals, see [docs/architecture.md](docs/architecture.md).
 For changes between versions, see [CHANGELOG.md](CHANGELOG.md). For the
 project's own self-description, see [README.md](README.md).
+---
+
+## Appendix: redveil-ui LAN exposure (dashboard, 0.2.0)
+
+This guide covers the `redveil` library CLI. The separate
+[`redveil-ui`](https://github.com/FitzyPrjkt/Redveil-UI) dashboard
+gains an **opt-in LAN mode** in 0.2.0; the authoritative documentation
+lives in its README ("deployment modes" section). Summary:
+
+- `redveil-ui init --bind 0.0.0.0` triggers a Y/n LAN exposure
+  warning and writes a confirmation line to `security.log`.
+- `init` generates an API key (`rvui_…`, shown once). The server
+  refuses to start on a non-loopback bind without a key.
+- On LAN, destructive actions (active/L3+ scans, custom probes,
+  target deletion) require auth — cookie (browser login) or
+  `X-API-Key` header (curl/CI).
+- Without a reverse proxy the session cookie is plaintext on the LAN;
+  use Caddy/Traefik for TLS on untrusted networks.
+
+For the full threat model, key storage precedence, and response
+matrices, see the redveil-ui README and its 0.2.0 design spec.
