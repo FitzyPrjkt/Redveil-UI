@@ -113,8 +113,15 @@ app = FastAPI(
 # Auth middleware (0.2.0): authenticates via X-API-Key header or HMAC
 # session cookie; loopback short-circuits. Route-level gates decide
 # what to do with request.state.is_authenticated.
-from redveil_ui.api.middleware import AuthMiddleware, AuditLogMiddleware  # noqa: E402
+from redveil_ui.api.middleware import (
+    AuthMiddleware,
+    AuditLogMiddleware,
+    SecurityHeadersMiddleware,
+)  # noqa: E402
 
+# Security headers FIRST (outermost) so they stamp every response,
+# including auth/audit rejections.
+app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(AuthMiddleware)
 # Audit AFTER auth in the stack: it reads request.state.is_authenticated.
 app.add_middleware(AuditLogMiddleware)

@@ -207,3 +207,36 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
                 )
             )
             await session.commit()
+
+
+# --- Security headers middleware (0.2.0 Phase 5, spec §8) -------------------
+
+CSP_POLICY = (
+    "default-src 'self'; "
+    "script-src 'self'; "
+    "style-src 'self' 'unsafe-inline'; "  # Next.js styled-jsx (tightening: 0.3.0)
+    "img-src 'self' data:; "
+    "connect-src 'self'; "
+    "object-src 'none'; "
+    "base-uri 'self'; "
+    "frame-ancestors 'none'; "
+    "form-action 'self'"
+)
+
+SECURITY_HEADERS = {
+    "Content-Security-Policy": CSP_POLICY,
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+}
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Stamp the spec §8 headers onto every response, both modes."""
+
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        for name, value in SECURITY_HEADERS.items():
+            response.headers.setdefault(name, value)
+        return response
