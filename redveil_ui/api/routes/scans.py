@@ -44,6 +44,21 @@ async def create_scan(
     """Start a new scan. Returns immediately with a `pending` status;
     the actual work happens in a background task fed by the SSE stream.
     """
+    # Auth gate (0.2.0 Phase 3, spec §6.5): destructive scan creations
+    # require authentication in LAN mode. Must run BEFORE the scope
+    # check so an unauthenticated destructive request gets 401 (auth
+    # layer), not 403 (scope layer — which would leak scope behavior
+    # to unauthenticated callers).
+    from redveil_ui.api.scanner import is_destructive_request
+
+    if is_destructive_request(body.model_dump()) and not getattr(
+        request.state, "is_authenticated", False
+    ):
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication required for destructive scan operations on LAN",
+        )
+
     target = await session.get(Target, body.target_id)
     if target is None:
         raise HTTPException(status_code=404, detail="target not found")

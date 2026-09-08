@@ -49,6 +49,26 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
+# Destructive-action classification (0.2.0 Phase 3, spec §6.5).
+DESTRUCTIVE_LEVELS = frozenset({"L3", "L4", "L5", "L6"})
+
+
+def is_destructive_request(body: dict) -> bool:
+    """Classify an incoming request body as destructive or not.
+
+    Returns True if ANY of:
+    - body['profile'] == 'active'
+    - body['max_destructive_level'] in DESTRUCTIVE_LEVELS
+    - body['allow_destructive'] is True
+    """
+    if body.get("profile") == "active":
+        return True
+    if body.get("max_destructive_level") in DESTRUCTIVE_LEVELS:
+        return True
+    if body.get("allow_destructive") is True:
+        return True
+    return False
+
 
 def _safe_target_name(url: str) -> str:
     """Turn a URL into a filesystem-safe directory name."""
