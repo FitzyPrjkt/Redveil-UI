@@ -15,11 +15,12 @@ import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy import func, select, text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from redveil_ui.api.db import DATA_DIR, Base, get_engine
+from redveil_ui.api.db import DATA_DIR, Base, get_engine, get_session
 from redveil_ui.api.routes import (
     auth,
     checks,
@@ -34,6 +35,7 @@ from redveil_ui.api.routes import (
     scope,
     targets,
 )
+from redveil_ui.api.models import Scan
 from redveil_ui.api.scanner import Scanner
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s | %(message)s")
@@ -149,8 +151,27 @@ async def api_info() -> dict:
 
 
 @app.get("/healthz")
-async def healthz() -> dict:
-    return {"status": "ok"}
+async def healthz(session: AsyncSession = Depends(get_session)) -> dict:
+    """Liveness + fleet snapshot (0.2.0, spec §9).
+
+    Per-status counts are a stable, flat interface for monitoring tools:
+    adding a sixth status is a deliberate breaking change to this shape.
+    Cancelled is enumerated explicitly so it can never silently merge
+    into 'failed'.
+    """
+    db_ok = (await session.execute(text("SELECT 1"))).scalar() == 1
+
+    counts: dict[str, int] = {}
+    for status in ("pending", "running", "completed", "failed", "cancelled"):
+        counts[f"scans_{status}"] = await session.scalar(
+            select(func.count()).select_from(Scan).where(Scan.status == status)
+        )
+
+    return {
+        "status": "ok" if db_ok else "degraded",
+        "db": "ok" if db_ok else "error",
+        **counts,
+    }
 
 
 # Routers
