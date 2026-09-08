@@ -4,6 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  IconBug,
   IconLayoutDashboard,
   IconTarget,
   IconHistory,
@@ -24,6 +25,7 @@ const navItems: NavItem[] = [
   { label: "Dashboard", href: "/", icon: IconLayoutDashboard },
   { label: "Targets", href: "/targets", icon: IconTarget },
   { label: "Scan History", href: "/scans", icon: IconHistory },
+  { label: "Findings", href: "/findings", icon: IconBug },
   { label: "Plugins", href: "/plugins", icon: IconPuzzle },
   { label: "Probe Builder", href: "/probe-builder", icon: IconWaveSine },
   { label: "Settings", href: "/settings", icon: IconSettings },
