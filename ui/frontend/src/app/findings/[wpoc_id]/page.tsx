@@ -2,7 +2,7 @@
 
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { IconAlertTriangle, IconCircleCheck, IconHistory } from "@tabler/icons-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge as UiBadge } from "@/components/ui/badge";
@@ -67,11 +67,29 @@ function statusClass(status: string): string {
 }
 
 export default function FindingDetailPage({
-  params,
+  params: _unusedParams,
 }: {
   params: Promise<{ wpoc_id: string }>;
 }) {
-  const { wpoc_id } = use(params);
+  // We deliberately ignore the server-baked `params` prop. Under
+  // `output: "export"` the static HTML for /findings/[wpoc_id] only
+  // pre-renders the `_` placeholder, so the baked `params.wpoc_id` is
+  // always the literal "_" regardless of the actual browser URL.
+  //
+  // We do not use `useParams()` either: with static export, useParams
+  // for a param not covered by generateStaticParams suspends (per
+  // Next.js 16 docs) and without a Suspense boundary it returns the
+  // baked value forever. We instead read the live URL directly via
+  // `usePathname()` and parse the segment ourselves. This is a pure
+  // client-side read that always reflects the actual browser URL.
+  void _unusedParams;
+  const pathname = usePathname() ?? "";
+  // pathname is /findings/<wpoc_id> — split on "/" and take the
+  // second non-empty segment. URL-decode in case the wpoc_id has
+  // percent-encoded characters.
+  const wpoc_id = decodeURIComponent(
+    pathname.split("/").filter(Boolean)[1] ?? ""
+  );
   const router = useRouter();
   const [finding, setFinding] = useState<FindingDetail | null>(null);
   const [loading, setLoading] = useState(true);

@@ -52,6 +52,10 @@ data/reports/
 
 # Local sqlite DB (dev only)
 data/redveil.db
+data/redveil-ui.db
+data/redveil-ui.db-shm
+data/redveil-ui.db-wal
+data/reports/
 
 # Playwright test artifacts (regenerated on each run)
 ui/frontend/test-results/*.png

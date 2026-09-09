@@ -2,6 +2,7 @@
 
 import { use, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
   IconAlertTriangle,
   IconCheck,
@@ -126,9 +127,17 @@ function statusIconClass(status: number) {
 }
 
 export default function ReplayPage({
-  params,
+  params: _unusedParams,
 }: PageProps<"/findings/[wpoc_id]/replay">) {
-  const { wpoc_id } = use(params);
+  // See findings/[wpoc_id]/page.tsx for the rationale. Under static
+  // export, useParams() for a not-pre-rendered dynamic param suspends
+  // and (without a Suspense boundary) returns the baked "_" value.
+  // usePathname() reads the live URL on the client and is reliable.
+  void _unusedParams;
+  const pathname = usePathname() ?? "";
+  const wpoc_id = decodeURIComponent(
+    pathname.split("/").filter(Boolean)[1] ?? ""
+  );
 
   const [finding, setFinding] = useState<FindingDetail | null>(null);
   const [result, setResult] = useState<ReplayResult | null>(null);

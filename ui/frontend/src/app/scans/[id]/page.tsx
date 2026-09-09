@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -187,7 +187,6 @@ export default function ScanDetailPage({
   const isRunning = scan.status === "running";
   const isFailed = scan.status === "failed";
   const isCancelled = scan.status === "cancelled";
-  const isCancelling = false; // future: set true while the cancel request is in flight
 
   return (
     <div className="space-y-8" data-testid="scan-detail">
@@ -261,9 +260,7 @@ export default function ScanDetailPage({
             </span>
           </div>
         ) : null}
-        {isRunning && !isCancelling ? (
-          <CancelScanButton scanId={scan.id} />
-        ) : null}
+        {isRunning ? <CancelScanButton scanId={scan.id} /> : null}
       </header>
 
       {/* Progress */}

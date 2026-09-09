@@ -2,7 +2,7 @@
 // calls triggered by user actions (clicks, filters, refresh) and assert
 // that the right endpoint was hit with the right method.
 
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 
 type ApiCall = {
   method: string;
@@ -13,7 +13,7 @@ type ApiCall = {
 
 const callsByPage = new Map<string, ApiCall[]>();
 
-function record(page: { on: (event: string, fn: (resp: any) => void) => void }) {
+function record(page: Page) {
   // Best-effort: attach once per page via a guard. Playwright creates
   // a fresh page per test, so a module-level map is fine.
   return (label: string) =>

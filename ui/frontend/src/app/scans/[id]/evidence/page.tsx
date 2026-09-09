@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import { usePathname } from "next/navigation";
 import {
   IconChevronDown,
   IconChevronRight,
@@ -256,8 +256,13 @@ function EvidenceRowItem({
 // --- Page --------------------------------------------------------------
 
 export default function EvidenceLogPage() {
-  const params = useParams<{ id: string }>();
-  const scanId = params?.id;
+  // See findings/[wpoc_id]/page.tsx for the rationale. Under static
+  // export with a `_` placeholder, useParams() for the id returns the
+  // baked "_" value. Read the live URL via usePathname() instead.
+  const pathname = usePathname() ?? "";
+  const scanId = decodeURIComponent(
+    pathname.split("/").filter(Boolean)[1] ?? ""
+  );
 
   const [scan, setScan] = useState<Scan | null>(null);
   const [target, setTarget] = useState<Target | null>(null);
@@ -277,8 +282,14 @@ export default function EvidenceLogPage() {
     if (methodFilter) params.set("method", methodFilter);
     if (statusRange) {
       const range = STATUS_RANGES.find((r) => r.value === statusRange);
-      if (range?.min !== null && range.min !== undefined) params.set("status_min", String(range.min));
-      if (range?.max !== null && range.max !== undefined) params.set("status_max", String(range.max));
+      if (range) {
+        if (range.min !== null && range.min !== undefined) {
+          params.set("status_min", String(range.min));
+        }
+        if (range.max !== null && range.max !== undefined) {
+          params.set("status_max", String(range.max));
+        }
+      }
     }
     if (checkIdQuery.trim()) params.set("check_id", checkIdQuery.trim());
     const qs = params.toString();

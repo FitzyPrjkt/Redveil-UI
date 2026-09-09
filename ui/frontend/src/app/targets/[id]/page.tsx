@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import { usePathname } from "next/navigation";
 import {
   IconAlertTriangle,
   IconChevronRight,
@@ -346,8 +346,13 @@ function IssueDefsView({ items }: { items: IssueDefinition[] }) {
 // --- Page ---------------------------------------------------------------
 
 export default function TargetDetailPage() {
-  const params = useParams<{ id: string }>();
-  const targetId = params?.id;
+  // See findings/[wpoc_id]/page.tsx for the rationale. Under static
+  // export with a `_` placeholder, useParams() for the id returns the
+  // baked "_" value. Read the live URL via usePathname() instead.
+  const pathname = usePathname() ?? "";
+  const targetId = decodeURIComponent(
+    pathname.split("/").filter(Boolean)[1] ?? ""
+  );
   const [target, setTarget] = useState<Target | null>(null);
   const [sitemap, setSitemap] = useState<SiteMap | null>(null);
   const [scope, setScope] = useState<Scope | null>(null);
