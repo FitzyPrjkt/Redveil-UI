@@ -271,72 +271,137 @@ def get_tls_paths(config_dir: Path | None = None) -> tuple[Path, Path, Path]:
     )
 
 
+def _install_firefox_ca(ca_pem: Path) -> list[str]:
+    """Install CA to Firefox profiles via certutil (if available)."""
+    import shutil
+
+    msgs: list[str] = []
+    if shutil.which("certutil") is None:
+        return ["certutil not found — Firefox auto-install skipped (install libnss3-tools)"]
+    # Find Firefox profiles
+    moz_dir = Path.home() / ".mozilla" / "firefox"
+    if not moz_dir.is_dir():
+        return ["No Firefox profiles found — skipping Firefox"]
+    for profile in moz_dir.glob("*.default*"):
+        if not profile.is_dir():
+            continue
+        db_arg = f"sql:{profile}"
+        # Check if already exists
+        try:
+            result = subprocess.run(
+                ["certutil", "-L", "-d", db_arg],
+                capture_output=True,
+                text=True,
+            )
+            if "redveil Local CA" in result.stdout:
+                msgs.append(f"Firefox {profile.name}: already trusted")
+                continue
+        except Exception:
+            pass
+        try:
+            subprocess.run(
+                ["certutil", "-A", "-n", "redveil Local CA", "-t", "C,,", "-i", str(ca_pem), "-d", db_arg],
+                check=True,
+                capture_output=True,
+            )
+            msgs.append(f"Firefox {profile.name}: installed")
+        except subprocess.CalledProcessError as e:
+            msgs.append(f"Firefox {profile.name}: failed ({e})")
+        except Exception as e:  # noqa: BLE001
+            msgs.append(f"Firefox {profile.name}: failed ({e})")
+    if not msgs:
+        msgs.append("No Firefox profiles matched")
+    return msgs
+
+
+def _install_chrome_nss_ca(ca_pem: Path) -> list[str]:
+    """Install CA to Chrome/Chromium NSS DB (~/.pki/nssdb) if exists."""
+    import shutil
+
+    if shutil.which("certutil") is None:
+        return []
+    nss_db = Path.home() / ".pki" / "nssdb"
+    if not nss_db.is_dir():
+        return []
+    try:
+        result = subprocess.run(
+            ["certutil", "-L", "-d", f"sql:{nss_db}"],
+            capture_output=True,
+            text=True,
+        )
+        if "redveil Local CA" in result.stdout:
+            return ["Chrome NSS: already trusted"]
+    except Exception:
+        pass
+    try:
+        subprocess.run(
+            ["certutil", "-A", "-n", "redveil Local CA", "-t", "C,,", "-i", str(ca_pem), "-d", f"sql:{nss_db}"],
+            check=True,
+            capture_output=True,
+        )
+        return ["Chrome NSS: installed"]
+    except Exception as e:  # noqa: BLE001
+        return [f"Chrome NSS: failed ({e})"]
+
+
 def install_ca(config_dir: Path | None = None) -> str:
-    """Install CA to system trust store. Returns status message. Requires sudo."""
+    """Install CA to system + Firefox + Chrome NSS. Returns combined status."""
     ca_pem = _ca_dir(config_dir) / CA_PEM
     if not ca_pem.exists():
         raise SystemExit(f"CA not found at {ca_pem}. Run `redveil-ui init --tls` first.")
 
     system = platform.system()
-    if system == "Linux":
-        # Detect distro: Debian/Ubuntu vs Fedora/RHEL vs Arch
-        import shutil
+    msgs: list[str] = []
 
+    # 1. System store
+    if system == "Linux":
         if Path("/usr/local/share/ca-certificates").exists():
             dest = Path("/usr/local/share/ca-certificates/redveil-ca.crt")
-            # Need sudo
             try:
-                subprocess.run(
-                    ["sudo", "cp", str(ca_pem), str(dest)], check=True
-                )
+                subprocess.run(["sudo", "cp", str(ca_pem), str(dest)], check=True)
                 subprocess.run(["sudo", "update-ca-certificates"], check=True)
-                return f"Installed CA to {dest} and ran update-ca-certificates. Restart browser."
+                msgs.append(f"System: installed to {dest} (Debian/Ubuntu)")
             except subprocess.CalledProcessError as e:
-                raise SystemExit(f"Failed to install CA on Linux: {e}")
+                msgs.append(f"System: failed ({e})")
             except FileNotFoundError:
-                raise SystemExit("sudo not found — run manually: sudo cp ... && sudo update-ca-certificates")
+                msgs.append("System: sudo not found — run sudo cp ... && sudo update-ca-certificates")
         elif Path("/etc/pki/ca-trust/source/anchors").exists():
             dest = Path("/etc/pki/ca-trust/source/anchors/redveil-ca.crt")
             try:
                 subprocess.run(["sudo", "cp", str(ca_pem), str(dest)], check=True)
                 subprocess.run(["sudo", "update-ca-trust"], check=True)
-                return f"Installed CA to {dest} and ran update-ca-trust. Restart browser."
+                msgs.append(f"System: installed to {dest} (Fedora/RHEL)")
             except subprocess.CalledProcessError as e:
-                raise SystemExit(f"Failed to install CA: {e}")
+                msgs.append(f"System: failed ({e})")
         else:
-            return (
-                f"Unknown Linux CA store. Manually copy {ca_pem} to your distro's trust store:\n"
-                f"  Debian/Ubuntu: sudo cp {ca_pem} /usr/local/share/ca-certificates/redveil-ca.crt && sudo update-ca-certificates\n"
-                f"  Fedora/RHEL: sudo cp {ca_pem} /etc/pki/ca-trust/source/anchors/redveil-ca.crt && sudo update-ca-trust"
-            )
+            msgs.append("System: unknown CA store — manual copy needed")
     elif system == "Darwin":
         try:
             subprocess.run(
-                [
-                    "sudo",
-                    "security",
-                    "add-trusted-cert",
-                    "-d",
-                    "-r",
-                    "trustRoot",
-                    "-k",
-                    "/Library/Keychains/System.keychain",
-                    str(ca_pem),
-                ],
+                ["sudo", "security", "add-trusted-cert", "-d", "-r", "trustRoot", "-k", "/Library/Keychains/System.keychain", str(ca_pem)],
                 check=True,
             )
-            return "Installed CA to System.keychain as trustRoot. Restart browser."
+            msgs.append("System: installed to System.keychain (macOS)")
         except subprocess.CalledProcessError as e:
-            raise SystemExit(f"Failed to install CA on macOS: {e}")
+            msgs.append(f"System: failed ({e})")
     elif system == "Windows":
         try:
-            subprocess.run(
-                ["certutil", "-addstore", "-f", "ROOT", str(ca_pem)], check=True
-            )
-            return "Installed CA to Windows ROOT store. Restart browser."
+            subprocess.run(["certutil", "-addstore", "-f", "ROOT", str(ca_pem)], check=True)
+            msgs.append("System: installed to Windows ROOT")
         except subprocess.CalledProcessError as e:
-            raise SystemExit(f"Failed to install CA on Windows: {e}")
+            msgs.append(f"System: failed ({e})")
     else:
-        return (
-            f"Unsupported OS {system}. Manually install {ca_pem} to your system's trust store and restart browser."
-        )
+        msgs.append(f"System: unsupported OS {system}")
+
+    # 2. Firefox (all profiles) — covers Firefox separate store
+    msgs.extend(_install_firefox_ca(ca_pem))
+    # 3. Chrome NSS (Linux) — covers Chrome/Chromium NSS DB
+    msgs.extend(_install_chrome_nss_ca(ca_pem))
+
+    # Also handle case where certutil missing for Firefox/Chrome
+    if not any("Firefox" in m for m in msgs):
+        # _install_firefox_ca already returned message if certutil missing
+        pass
+
+    msgs.append("Restart browsers. Test: curl https://127.0.0.1:8000/healthz (no -k) should succeed.")
+    return "\n".join(msgs)
