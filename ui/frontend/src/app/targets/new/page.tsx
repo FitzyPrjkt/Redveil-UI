@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { IconAlertTriangle, IconCircleCheck } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
@@ -8,7 +8,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { apiPost } from "@/lib/api";
+import { apiGet, apiPost } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 type Profile = "passive" | "low_impact" | "active";
@@ -92,6 +92,29 @@ export default function NewScanPage() {
   const [maxRequests, setMaxRequests] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Phase A1: enabled_checks allowlist
+  const [checks, setChecks] = useState<{ id: string; name: string; safety_profile: string }[]>([]);
+  const [checksLoading, setChecksLoading] = useState(false);
+  const [enabledChecks, setEnabledChecks] = useState<string[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadChecks() {
+      setChecksLoading(true);
+      try {
+        const data = await apiGet<{ id: string; name: string; safety_profile: string }[]>("/api/checks");
+        if (!cancelled) setChecks(data);
+      } catch {
+        // leave empty, operator can still scan with all checks
+      } finally {
+        if (!cancelled) setChecksLoading(false);
+      }
+    }
+    loadChecks();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const levelSwatch = useMemo(() => levelColor(level), [level]);
 
@@ -136,6 +159,7 @@ export default function NewScanPage() {
         allow_destructive: boolean;
         gate_mode: GateMode;
         max_requests?: number;
+        enabled_checks?: string[];
       } = {
         target_id: target.id,
         profile,
@@ -148,6 +172,7 @@ export default function NewScanPage() {
       if (maxRequests.trim() && Number.isFinite(maxReqNum) && maxReqNum > 0) {
         scanBody.max_requests = maxReqNum;
       }
+      if (enabledChecks.length > 0) scanBody.enabled_checks = enabledChecks;
 
       const scan = await apiPost<Scan>("/api/scans", scanBody);
       router.push(`/scans/${scan.id}`);
@@ -410,6 +435,63 @@ export default function NewScanPage() {
               </div>
             ) : null}
           </div>
+        </Card>
+
+        <Card className="space-y-3 rounded-xl border border-zinc-800 bg-zinc-900 p-5">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-400">
+              Checks <span className="text-zinc-500 normal-case">(optional)</span>
+            </h2>
+            {enabledChecks.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => setEnabledChecks([])}
+                className="text-xs text-zinc-400 underline hover:text-zinc-200"
+                data-testid="checks-clear"
+              >
+                Clear ({enabledChecks.length})
+              </button>
+            ) : (
+              <span className="text-xs text-zinc-500">All checks (default)</span>
+            )}
+          </div>
+          <p className="text-xs text-zinc-500">
+            Pilih subset checks untuk scan ini. Kosongkan untuk menjalankan semua checks. Filter preserve Scope/Gate/Limits.
+          </p>
+          {checksLoading ? (
+            <p className="text-xs text-zinc-500">Loading checks…</p>
+          ) : (
+            <div className="grid gap-2 sm:grid-cols-2" data-testid="checks-grid">
+              {checks.map((c) => {
+                const checked = enabledChecks.includes(c.id);
+                return (
+                  <label
+                    key={c.id}
+                    className={cn(
+                      "flex cursor-pointer items-start gap-2 rounded-lg border p-2 text-sm",
+                      checked ? "border-sky-500/30 bg-sky-500/10 text-sky-200" : "border-zinc-800 bg-zinc-950 text-zinc-300 hover:border-zinc-700",
+                    )}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(e) => {
+                        setEnabledChecks((prev) =>
+                          e.target.checked ? [...prev, c.id] : prev.filter((x) => x !== c.id),
+                        );
+                      }}
+                      className="mt-0.5 h-4 w-4 rounded border-zinc-600 bg-zinc-950"
+                      data-testid={`check-${c.id}`}
+                    />
+                    <span className="flex-1">
+                      <span className="font-mono text-xs">{c.id}</span>
+                      <span className="ml-1 text-xs text-zinc-500">[{c.safety_profile}]</span>
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          )}
         </Card>
 
         {error ? (

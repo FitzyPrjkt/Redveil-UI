@@ -90,6 +90,11 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                 await conn.execute(text("ALTER TABLE findings ADD COLUMN notes TEXT"))
             if "annotated_at" not in cols:
                 await conn.execute(text("ALTER TABLE findings ADD COLUMN annotated_at DATETIME"))
+            # Phase A1 migration: add enabled_checks to scans if missing
+            result2 = await conn.execute(text("PRAGMA table_info(scans)"))
+            cols2 = {row[1] for row in result2.fetchall()}
+            if "enabled_checks" not in cols2:
+                await conn.execute(text("ALTER TABLE scans ADD COLUMN enabled_checks JSON"))
         except Exception:
             pass
     log.info("DB schema initialized at %s", engine.url)

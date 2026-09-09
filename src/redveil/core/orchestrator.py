@@ -87,6 +87,14 @@ class Orchestrator:
             self._gate = ActionGate(mode=GateMode.NON_INTERACTIVE)
         self._bind_all_checks()
 
+    def _enabled_checks(self) -> list:
+        """Return filtered check list based on config.enabled_checks (Phase A1)."""
+        enabled = getattr(self._config, "enabled_checks", None)
+        if enabled:
+            # Preserve requested order, skip unknown (validated in CLI/API)
+            return self._registry.filter_enabled(enabled)
+        return self._registry.all()
+
     def _bind_all_checks(self) -> None:
         """Bind the orchestrator-owned dependencies into every registered check.
 
@@ -103,9 +111,9 @@ class Orchestrator:
             behavior_model=self._behavior_model,
             gate=self._gate,
         )
-        for check in self._registry.all():
+        for check in self._enabled_checks():
             check.bind(deps)
-        for check in self._registry.all():
+        for check in self._enabled_checks():
             check.bind(deps)
 
     async def _build_application_model(self) -> None:
@@ -218,7 +226,7 @@ class Orchestrator:
         # Build the ApplicationModel via AttackSurfaceMapper BEFORE running
         # any check.discover() so checks that consume the model have it ready.
         await self._build_application_model()
-        for check in self._registry.all():
+        for check in self._enabled_checks():
             try:
                 await check.discover(self._ctx)  # type: ignore[arg-type]
             except NotImplementedError:
@@ -243,7 +251,7 @@ class Orchestrator:
             config=self._config,
             context=self._ctx,
         )
-        for check in self._registry.all():
+        for check in self._enabled_checks():
             if check._deps is None:  # type: ignore[attr-defined]
                 check.bind(deps)
             await self._bus.publish(Event(EventType.CHECK_STARTED, source=check.id))
@@ -292,7 +300,7 @@ class Orchestrator:
             context=self._ctx,
         )
 
-        for check in self._registry.all():
+        for check in self._enabled_checks():
             if check._deps is None:  # type: ignore[attr-defined]
                 check.bind(deps)
 

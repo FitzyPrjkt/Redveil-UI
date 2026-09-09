@@ -110,6 +110,11 @@ class ScanCreate(BaseModel):
             "MEDIUM+). Stored for future use."
         ),
     )
+    # Phase A1: optional allowlist of check IDs. None/empty = all checks.
+    enabled_checks: list[str] | None = Field(
+        default=None,
+        description="Optional allowlist of check IDs to run (e.g. ['sqli-time-based','xss-reflected']). None/empty = all.",
+    )
 
     # Allowed destructive level values (both forms accepted on input).
     _DESTRUCTIVE_LEVELS: ClassVar[set[str]] = {
@@ -149,6 +154,47 @@ class ScanCreate(BaseModel):
                 f"gate_mode must be one of {sorted(cls._GATE_MODES)}, got {v!r}"
             )
         return v
+
+    @field_validator("enabled_checks", mode="before")
+    @classmethod
+    def _validate_enabled_checks(cls, v: Any) -> list[str] | None:
+        if v is None:
+            return None
+        if not isinstance(v, list):
+            raise ValueError("enabled_checks must be a list of check IDs")
+        # Strip, drop empty, dedup preserving order, limit 50
+        cleaned: list[str] = []
+        seen: set[str] = set()
+        for item in v:
+            if not isinstance(item, str):
+                raise ValueError(f"enabled_checks must be strings, got {type(item).__name__}")
+            s = item.strip()
+            if not s or s in seen:
+                continue
+            if len(s) > 64:
+                raise ValueError(f"check ID too long: {s!r}")
+            seen.add(s)
+            cleaned.append(s)
+        if len(cleaned) > 50:
+            raise ValueError("enabled_checks: too many checks (max 50)")
+        # Validate against known checks (fail fast, not silent skip)
+        if cleaned:
+            try:
+                from redveil.plugins.loader import build_default_registry
+
+                reg = build_default_registry()
+                unknown = [c for c in cleaned if c not in reg]
+                if unknown:
+                    raise ValueError(
+                        f"unknown check IDs: {', '.join(unknown)}. "
+                        f"Use GET /api/checks to list valid IDs."
+                    )
+            except ValueError:
+                raise
+            except Exception:
+                # If loader fails, skip validation (don't block scan)
+                pass
+        return cleaned if cleaned else None
 
     @model_validator(mode="after")
     def _check_destructive_consent(self) -> "ScanCreate":
@@ -193,6 +239,8 @@ class ScanOut(BaseModel):
     max_destructive_level: str = "L2"
     allow_destructive: bool = False
     gate_mode: str = "non_interactive"
+    # Phase A1: allowlist (None/empty = all)
+    enabled_checks: list[str] | None = None
 
 
 class ScanStatus(BaseModel):

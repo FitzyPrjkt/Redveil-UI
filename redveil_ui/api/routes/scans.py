@@ -131,6 +131,7 @@ async def create_scan(
         max_destructive_level=body.max_destructive_level,
         allow_destructive=body.allow_destructive,
         gate_mode=body.gate_mode,
+        enabled_checks=body.enabled_checks,
     )
     session.add(scan)
     await session.commit()
@@ -151,6 +152,7 @@ async def create_scan(
             max_destructive_level=body.max_destructive_level,
             allow_destructive=body.allow_destructive,
             gate_mode=body.gate_mode,
+            enabled_checks=body.enabled_checks,
         )
     )
     # C2: drop the registry entry as soon as the task finishes so the
@@ -180,6 +182,7 @@ async def _drive_scan(
     max_destructive_level: str = "L2",
     allow_destructive: bool = False,
     gate_mode: str = "non_interactive",
+    enabled_checks: list[str] | None = None,
 ) -> None:
     """Background task: update Scan row as the orchestrator runs."""
     from redveil_ui.api.db import get_session_factory
@@ -207,6 +210,7 @@ async def _drive_scan(
             max_destructive_level=max_destructive_level,
             allow_destructive=allow_destructive,
             gate_mode=gate_mode,
+            enabled_checks=enabled_checks,
         ):
             last_event = event
             # Fan the event out to any SSE subscribers of this scan.
@@ -361,6 +365,7 @@ async def start_scan(
             max_destructive_level=scan.max_destructive_level,
             allow_destructive=scan.allow_destructive,
             gate_mode=scan.gate_mode,
+            enabled_checks=scan.enabled_checks,
         )
     )
     # C2: registry cleanup on completion (see create_scan).

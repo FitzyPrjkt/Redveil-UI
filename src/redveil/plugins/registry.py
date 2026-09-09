@@ -49,6 +49,21 @@ class Registry:
     def by_category(self, category: CheckCategory) -> list[Check]:
         return [c for c in self._checks.values() if c.category == category]
 
+    def by_ids(self, ids: list[str]) -> list[Check]:
+        """Return checks matching ids, preserving ids order, skipping unknown."""
+        return [self._checks[i] for i in ids if i in self._checks]
+
+    def filter_enabled(self, enabled_checks: list[str] | None) -> list[Check]:
+        """Return filtered check list for orchestrator.
+
+        None/empty => all checks (backwards compat). Otherwise return only
+        those in enabled_checks, preserving requested order and skipping unknown
+        IDs (unknowns are validated in CLI/API layer).
+        """
+        if not enabled_checks:
+            return self.all()
+        return self.by_ids(enabled_checks)
+
     def __len__(self) -> int:
         return len(self._checks)
 

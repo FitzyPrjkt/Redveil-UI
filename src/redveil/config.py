@@ -321,6 +321,14 @@ class RedVeilConfig(BaseSettings):
     reporting: ReportingConfig = Field(default_factory=ReportingConfig)
     environment: EnvironmentConfig = Field(default_factory=EnvironmentConfig)
     profile: SafetyProfile = SafetyProfile.PASSIVE
+    # Phase A1: optional allowlist of check IDs to run. None/empty = all checks.
+    # Validated lazily against registry in orchestrator/CLI (extra="ignore" keeps
+    # old configs compatible). Stored as raw strings to avoid hard-coding the
+    # check catalog in the config schema.
+    enabled_checks: list[str] | None = Field(
+        default=None,
+        description="Optional allowlist of check IDs to run (e.g. ['sqli-time-based','xss-reflected']). None/empty = all.",
+    )
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> RedVeilConfig:

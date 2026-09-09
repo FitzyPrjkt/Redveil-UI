@@ -60,6 +60,8 @@ class Scan(Base):
     gate_mode: Mapped[str] = mapped_column(
         String(32), nullable=False, default="non_interactive"
     )
+    # Phase A1: optional allowlist of check IDs (JSON, None/empty = all)
+    enabled_checks: Mapped[list | None] = mapped_column(JSON, nullable=True, default=None)
 
     target: Mapped[Target] = relationship("Target", back_populates="scans")
     findings: Mapped[list["Finding"]] = relationship(

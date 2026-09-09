@@ -228,10 +228,47 @@ def scan(
              "L1..L6 (case-insensitive) or integer. Default L2 (data_modification).",
     ),
     output: Path = typer.Option(Path("reports"), "--output", "-o"),
+    checks: str | None = typer.Option(
+        None, "--checks",
+        help="Comma-separated allowlist of check IDs to run (e.g. 'sqli-time-based,xss-reflected'). None/empty = all checks.",
+    ),
+    checks_file: Path | None = typer.Option(
+        None, "--checks-file",
+        help="Path to file with one check ID per line (alternative to --checks).",
+    ),
 ):
     """Run a full scan against the target."""
+    # Phase A1: parse enabled_checks from --checks / --checks-file
+    enabled_checks: list[str] | None = None
+    if checks_file and checks_file.exists():
+        enabled_checks = [
+            line.strip() for line in checks_file.read_text().splitlines()
+            if line.strip() and not line.strip().startswith("#")
+        ]
+    elif checks:
+        enabled_checks = [c.strip() for c in checks.split(",") if c.strip()]
+    # Validate against registry (fail fast, not silent skip)
+    if enabled_checks:
+        reg_tmp = build_default_registry()
+        unknown = [c for c in enabled_checks if c not in reg_tmp]
+        if unknown:
+            console.print(f"[red]unknown check IDs: {', '.join(unknown)}[/red]")
+            console.print(f"available: {', '.join(c.id for c in reg_tmp.all())}")
+            raise typer.Exit(code=2)
+        # Dedup preserving order
+        seen: set[str] = set()
+        deduped: list[str] = []
+        for c in enabled_checks:
+            if c not in seen:
+                seen.add(c)
+                deduped.append(c)
+        enabled_checks = deduped
+
     if scope and scope.exists():
         cfg = RedVeilConfig.from_yaml(scope)
+        # If scope YAML already has enabled_checks, CLI overrides it
+        if enabled_checks is not None:
+            cfg.enabled_checks = enabled_checks
     else:
         from urllib.parse import urlparse
         host = urlparse(target).hostname or target
@@ -246,6 +283,7 @@ def scan(
             ),
             profile=profile,
             reporting=ReportingConfig(output_dir=output),
+            enabled_checks=enabled_checks,
         )
     cfg.profile = profile
     cfg.limits.requests_per_second = rps
@@ -254,6 +292,8 @@ def scan(
     cfg.authorization.allow_destructive = allow_destructive
     cfg.authorization.acknowledged_safety_terms = active
     cfg.authorization.max_destructive_level = max_destructive_level
+    if enabled_checks is not None:
+        cfg.enabled_checks = enabled_checks
 
     try:
         asyncio.run(_run_scan(cfg, gate_mode=gate_mode))
