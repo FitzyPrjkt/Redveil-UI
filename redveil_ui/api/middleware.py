@@ -298,20 +298,40 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
 
 # --- Security headers middleware (0.2.0 Phase 5, spec §8) -------------------
 
-CSP_POLICY = (
-    "default-src 'self'; "
-    "script-src 'self'; "
-    "style-src 'self' 'unsafe-inline'; "  # Next.js styled-jsx (tightening: 0.3.0)
-    "img-src 'self' data:; "
-    "connect-src 'self'; "
-    "object-src 'none'; "
-    "base-uri 'self'; "
-    "frame-ancestors 'none'; "
-    "form-action 'self'"
-)
+import re as _re  # noqa: E402
+import secrets as _secrets  # noqa: E402
+
+_SCRIPT_SRC_RE = _re.compile(r"(<script\b(?![^>]*\bsrc=)[^>]*?)(/?>)")
+
+
+def _csp_policy(nonce: str) -> str:
+    """CSP with a per-response nonce for the SPA's inline scripts.
+
+    Next.js static export emits inline flight-payload <script> tags that
+    carry the hydration data; blocking them kills hydration on every
+    dynamic route (React #412, blank pages). Instead of 'unsafe-inline',
+    the middleware injects this nonce into those tags and names it here.
+    'unsafe-inline' stays for style-src (styled-jsx emits <style> tags
+    with no reliable hook — nonce tightening for styles remains 0.3.0).
+    """
+    return (
+        "default-src 'self'; "
+        f"script-src 'self' 'nonce-{nonce}'; "
+        "style-src 'self' 'unsafe-inline'; "  # Next.js styled-jsx (tightening: 0.3.0)
+        "img-src 'self' data:; "
+        "connect-src 'self'; "
+        "object-src 'none'; "
+        "base-uri 'self'; "
+        "frame-ancestors 'none'; "
+        "form-action 'self'"
+    )
+
+
+# Kept for callers that stamp the header without a nonce (API responses
+# don't carry HTML bodies, so no injection is needed there).
+CSP_POLICY = _csp_policy("")
 
 SECURITY_HEADERS = {
-    "Content-Security-Policy": CSP_POLICY,
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "no-referrer",
@@ -320,13 +340,61 @@ SECURITY_HEADERS = {
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    """Stamp the spec §8 headers onto every response, both modes."""
+    """Stamp the spec §8 headers onto every response, both modes.
+
+    For GET responses with an HTML body (the SPA pages), a fresh nonce
+    is generated, injected into every inline <script> tag in the body,
+    and the CSP names it — so hydration works without opening the door
+    to arbitrary inline script execution.
+    """
 
     async def dispatch(self, request: Request, call_next):
         response = await call_next(request)
+        content_type = response.headers.get("content-type", "")
+        nonce = None
+        if request.method == "GET" and content_type.startswith("text/html"):
+            nonce = _secrets.token_urlsafe(24)
+            body = await _drain_html(response)
+            if body is not None:
+                injected = _SCRIPT_SRC_RE.sub(
+                    lambda m: f'{m.group(1)} nonce="{nonce}"{m.group(2)}',
+                    body.decode("utf-8", "replace"),
+                )
+                new_body = injected.encode("utf-8")
+                response.headers["content-length"] = str(len(new_body))
+
+                async def _stream():
+                    yield new_body
+
+                response.body_iterator = _stream()
+        csp = _csp_policy(nonce) if nonce else CSP_POLICY
+        response.headers.setdefault("Content-Security-Policy", csp)
         for name, value in SECURITY_HEADERS.items():
             response.headers.setdefault(name, value)
         return response
+
+
+async def _drain_html(response) -> bytes | None:
+    """Drain a streaming response body and hand it back for rewrite."""
+    body = getattr(response, "body", None)
+    if isinstance(body, bytes):
+        return body
+    iterator = getattr(response, "body_iterator", None)
+    if iterator is None:
+        return None
+    chunks: list[bytes] = []
+    async for chunk in iterator:
+        if isinstance(chunk, bytes):
+            chunks.append(chunk)
+        else:
+            chunks.append(str(chunk).encode())
+    joined = b"".join(chunks)
+
+    async def _replay():
+        yield joined
+
+    response.body_iterator = _replay()
+    return joined
 
 
 # --- Rate limiting (0.2.0 Phase 6, spec §7.1) --------------------------------

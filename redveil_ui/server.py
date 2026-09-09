@@ -171,10 +171,12 @@ def run_server(config_path: str | None = None):
             )
 
         @app.get("/", include_in_schema=False)
+        @app.head("/", include_in_schema=False)
         async def spa_root():
             return FileResponse(str(WEB_DIR / "index.html"))
 
         @app.get("/{path:path}", include_in_schema=False)
+        @app.head("/{path:path}", include_in_schema=False)
         async def spa_fallback(path: str):
             """Serve the SPA shell for any non-API path.
 
