@@ -84,6 +84,9 @@ class Finding(Base):
     fingerprint: Mapped[str | None] = mapped_column(String(128), nullable=True)
     finding_data: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(default=_now, nullable=False)
+    # 0.3.0 annotations: operator notes per finding
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    annotated_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
     scan: Mapped[Scan] = relationship("Scan", back_populates="findings")
 

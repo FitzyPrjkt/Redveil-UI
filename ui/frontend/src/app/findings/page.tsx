@@ -30,6 +30,8 @@ interface Finding {
   endpoint: string | null;
   check_id: string | null;
   created_at: string;
+  notes: string | null;
+  annotated_at: string | null;
 }
 
 function severityClass(severity: string): string {
@@ -145,6 +147,15 @@ export default function FindingsListPage() {
                         </div>
                       </div>
                       <div className="flex shrink-0 flex-wrap items-center gap-2">
+                        {f.notes ? (
+                          <UiBadge
+                            variant="outline"
+                            data-testid="finding-annotated-badge"
+                            className="border border-sky-500/30 bg-sky-500/10 text-sky-300"
+                          >
+                            Annotated
+                          </UiBadge>
+                        ) : null}
                         {suppressed ? (
                           <UiBadge
                             variant="outline"

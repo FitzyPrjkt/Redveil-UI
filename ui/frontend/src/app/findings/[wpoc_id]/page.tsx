@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge as UiBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { apiGet } from "@/lib/api";
+import { apiGet, apiPatch } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 type Severity = "critical" | "high" | "medium" | "low" | "info";
@@ -26,6 +26,8 @@ interface FindingDetail {
   check_id: string | null;
   created_at: string;
   fingerprint: string | null;
+  notes: string | null;
+  annotated_at: string | null;
   finding_data?: {
     replay_recipe?: { method?: string; url?: string } | null;
     technical_explanation?: string;
@@ -94,6 +96,10 @@ export default function FindingDetailPage({
   const [finding, setFinding] = useState<FindingDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [notesDraft, setNotesDraft] = useState("");
+  const [notesSaving, setNotesSaving] = useState(false);
+  const [notesError, setNotesError] = useState<string | null>(null);
+  const [notesSuccess, setNotesSuccess] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -101,7 +107,10 @@ export default function FindingDetailPage({
     setError(null);
     apiGet<FindingDetail>(`/api/findings/${wpoc_id}`)
       .then((data) => {
-        if (!cancelled) setFinding(data);
+        if (!cancelled) {
+          setFinding(data);
+          setNotesDraft(data.notes ?? "");
+        }
       })
       .catch((err: unknown) => {
         if (!cancelled) {
@@ -115,6 +124,26 @@ export default function FindingDetailPage({
       cancelled = true;
     };
   }, [wpoc_id]);
+
+  async function handleSaveNotes() {
+    if (!finding) return;
+    setNotesSaving(true);
+    setNotesError(null);
+    setNotesSuccess(false);
+    try {
+      const res = await apiPatch<{ notes: string | null; annotated_at: string | null }>(
+        `/api/findings/${wpoc_id}`,
+        { notes: notesDraft },
+      );
+      setFinding((prev) => (prev ? { ...prev, notes: res.notes, annotated_at: res.annotated_at } : prev));
+      setNotesSuccess(true);
+      setTimeout(() => setNotesSuccess(false), 2000);
+    } catch (e: unknown) {
+      setNotesError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setNotesSaving(false);
+    }
+  }
 
   if (loading) {
     return (
@@ -265,6 +294,67 @@ export default function FindingDetailPage({
           </CardContent>
         </Card>
       ) : null}
+
+      <Card className="rounded-xl border border-zinc-800 bg-zinc-900" data-testid="annotation-card">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-xs font-medium uppercase tracking-wider text-zinc-400">
+            Operator Notes
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <textarea
+            data-testid="notes-textarea"
+            value={notesDraft}
+            onChange={(e) => setNotesDraft(e.target.value)}
+            placeholder="Add triage notes, false-positive rationale, retest instructions..."
+            rows={4}
+            maxLength={5000}
+            className="w-full rounded-lg border border-zinc-700 bg-zinc-800 p-3 text-sm text-zinc-100 placeholder-zinc-500 focus:border-sky-500 focus:outline-none"
+          />
+          <div className="flex items-center gap-2">
+            <Button
+              data-testid="notes-save"
+              onClick={handleSaveNotes}
+              disabled={notesSaving || notesDraft === (finding.notes ?? "")}
+              className="gap-1.5"
+            >
+              {notesSaving ? "Saving..." : "Save notes"}
+            </Button>
+            {finding.notes ? (
+              <Button
+                variant="outline"
+                data-testid="notes-clear"
+                onClick={() => {
+                  setNotesDraft("");
+                  // save empty to clear
+                  apiPatch(`/api/findings/${wpoc_id}`, { notes: "" })
+                    .then(() => {
+                      setFinding((prev) => (prev ? { ...prev, notes: null, annotated_at: null } : prev));
+                    })
+                    .catch((e: unknown) => setNotesError(e instanceof Error ? e.message : String(e)));
+                }}
+                className="gap-1.5"
+              >
+                Clear
+              </Button>
+            ) : null}
+            {notesSuccess ? (
+              <span data-testid="notes-saved" className="text-xs text-emerald-400">
+                Saved
+              </span>
+            ) : null}
+            {finding.annotated_at ? (
+              <span className="ml-auto text-xs text-zinc-500">annotated {new Date(finding.annotated_at).toLocaleString()}</span>
+            ) : null}
+          </div>
+          {notesError ? (
+            <div role="alert" data-testid="notes-error" className="rounded-lg border border-red-500/30 bg-red-500/10 p-2 text-xs text-red-300">
+              {notesError}
+            </div>
+          ) : null}
+          <p className="text-xs text-zinc-500">{notesDraft.length}/5000</p>
+        </CardContent>
+      </Card>
 
       <div className="flex items-center gap-2 text-xs text-zinc-500">
         <IconCircleCheck size={12} aria-hidden="true" />

@@ -224,6 +224,8 @@ class FindingOut(BaseModel):
     endpoint: str | None
     check_id: str | None
     created_at: datetime
+    notes: str | None = None
+    annotated_at: datetime | None = None
 
 
 class FindingDetailOut(FindingOut):
@@ -231,6 +233,20 @@ class FindingDetailOut(FindingOut):
 
     fingerprint: str | None
     finding_data: dict[str, Any] = Field(default_factory=dict)
+
+
+class FindingPatchIn(BaseModel):
+    """PATCH body for operator annotations."""
+
+    notes: str | None = Field(default=None, max_length=5000, description="Operator notes, max 5000 chars. Null/empty clears.")
+
+
+class FindingPatchOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    wpoc_id: str
+    notes: str | None
+    annotated_at: datetime | None
 
 
 # --- Checks ----------------------------------------------------------------

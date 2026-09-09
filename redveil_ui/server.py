@@ -301,8 +301,21 @@ def run_server(config_path: str | None = None):
 
 
 async def _init_schema_async():
+    from sqlalchemy import text
+
     from redveil_ui.api.db import Base, get_engine
+
     engine = get_engine()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # 0.3.0 migration: add notes columns if missing (existing DBs)
+        try:
+            result = await conn.execute(text("PRAGMA table_info(findings)"))
+            cols = {row[1] for row in result.fetchall()}
+            if "notes" not in cols:
+                await conn.execute(text("ALTER TABLE findings ADD COLUMN notes TEXT"))
+            if "annotated_at" not in cols:
+                await conn.execute(text("ALTER TABLE findings ADD COLUMN annotated_at DATETIME"))
+        except Exception:
+            pass
     await engine.dispose()

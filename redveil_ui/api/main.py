@@ -67,6 +67,18 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     # is small and migrations would be premature.
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # 0.3.0 migration: add notes columns if missing (existing DBs)
+        try:
+            from sqlalchemy import text
+
+            result = await conn.execute(text("PRAGMA table_info(findings)"))
+            cols = {row[1] for row in result.fetchall()}
+            if "notes" not in cols:
+                await conn.execute(text("ALTER TABLE findings ADD COLUMN notes TEXT"))
+            if "annotated_at" not in cols:
+                await conn.execute(text("ALTER TABLE findings ADD COLUMN annotated_at DATETIME"))
+        except Exception:
+            pass
     log.info("DB schema initialized at %s", engine.url)
 
     # Recovery sweep (0.2.0): any scan left 'running' by a previous
