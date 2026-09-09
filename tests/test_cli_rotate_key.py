@@ -61,5 +61,5 @@ def test_rotate_key_output_does_not_echo_old_key(isolated_home):
     result = runner.invoke(app, ["auth", "rotate-key", "--config", str(isolated_home / "config.yaml")])
     output = result.output
     # New key IS shown once; old key is not echoed anywhere
-    assert (isolated_home / ".api_key").read_text().strip() not in old_key
+    assert old_key not in output
     assert "only time" in output

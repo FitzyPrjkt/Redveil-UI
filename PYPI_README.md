@@ -5,7 +5,7 @@
 [![PyPI version](https://img.shields.io/pypi/v/redveil-ui.svg)](https://pypi.org/project/redveil-ui/)
 [![Python](https://img.shields.io/pypi/pyversions/redveil-ui.svg)](https://pypi.org/project/redveil-ui/#files)
 [![License: Proprietary](https://img.shields.io/badge/License-Proprietary-red.svg)](https://github.com/FitzyPrjkt/Redveil-UI/blob/main/LICENSE)
-[![Tests](https://img.shields.io/badge/tests-1101%20passing-brightgreen.svg)](https://github.com/FitzyPrjkt/Redveil-UI)
+[![Tests](https://img.shields.io/badge/tests-passing-brightgreen.svg)](https://github.com/FitzyPrjkt/Redveil-UI)
 [![redveil](https://img.shields.io/badge/depends%20on-redveil%201.9.6+-blue.svg)](https://pypi.org/project/redveil/)
 
 ```bash
@@ -314,8 +314,12 @@ Auth rules on LAN:
 - **CLI / curl** sends `-H "X-API-Key: rvui_…"`.
 - Rotate the key with `redveil-ui auth rotate-key` — this instantly
   invalidates every existing session.
-- Rate limits apply on LAN: 60 req/min per IP generally, 5 req/min on
-  login (brute-force damping).
+- Rate limits apply per IP: 60 req/min on every route by default
+  (override with `REDVEIL_RATE_LIMIT_DEFAULT`, e.g. `600/minute`;
+  set to `0/minute` to disable), 5 req/min on login (brute-force
+  damping). `X-Forwarded-For` is honored only from trusted proxies
+  (`REDVEIL_TRUSTED_PROXIES`, default loopback) so a LAN client
+  cannot rotate its apparent IP to dodge the per-IP bucket.
 
 **Plaintext limitation:** without a reverse proxy the session cookie
 travels unencrypted on the LAN. That is acceptable on trusted

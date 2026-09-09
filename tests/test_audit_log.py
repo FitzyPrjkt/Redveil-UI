@@ -7,9 +7,13 @@ from fastapi.testclient import TestClient
 
 @pytest.fixture
 def client():
+    """Direct ASGI peer is loopback: audit entries for allowed/denied
+    outcomes are written regardless, and destructive routes stay open
+    for loopback (the LAN 401 gate itself is covered in
+    test_route_gates.py)."""
     from redveil_ui.api.main import app
 
-    with TestClient(app) as c:
+    with TestClient(app, client=("127.0.0.1", 50000)) as c:
         yield c
 
 
@@ -29,19 +33,63 @@ def _audit_rows():
 
 
 def test_destructive_scan_create_writes_audit_entry(client):
-    """Loopback POST /api/scans (non-destructive body) → no audit row.
-    Destructive body → row with action=scan.create, result=allowed."""
+    """Loopback POST /api/scans with a destructive body → audited.
+
+    The seeded target's own URL fails the scope check (its scope_yaml
+    allows /api/* etc. but the bare URL path is '/'), so the route
+    answers 403 — the request WAS authorized (loopback) but refused on
+    its merits, which the middleware records as result='denied' with
+    the route's detail string (401/403 = denied is the standing
+    semantic; 404 = not_found; everything else = allowed).
+    """
     resp = client.post(
         "/api/scans",
         json={"target_id": 1, "profile": "active", "allow_destructive": True},
     )
-    # (target 1 may or may not exist here; the AUDIT behavior is what matters)
+    assert resp.status_code == 403  # scope violation, not auth
     rows = [r for r in _audit_rows() if r.action == "scan.create"]
     assert len(rows) >= 1
     row = rows[-1]
-    assert row.result == "allowed" or row.result == "denied"
+    assert row.result == "denied"
+    assert "scope violation" in (row.deny_reason or "")
     assert row.actor in ("loopback", "anonymous") or row.actor.startswith("key:")
     assert row.ts is not None
+
+
+def test_audit_denied_outcome_on_auth_failure():
+    """Unauthenticated LAN destructive create → 401 → result='denied'
+    with the gate's detail string as deny_reason."""
+    import os
+
+    from redveil_ui.api.main import app
+
+    api_key = "rvui_" + "b" * 32
+    os.environ["REDVEIL_UI_API_KEY"] = api_key
+    try:
+        with TestClient(app, client=("192.168.1.50", 51000)) as c:
+            resp = c.post(
+                "/api/scans",
+                json={"target_id": 1, "profile": "active", "allow_destructive": True},
+            )
+            assert resp.status_code == 401
+            rows = [r for r in _audit_rows() if r.action == "scan.create"]
+    finally:
+        os.environ.pop("REDVEIL_UI_API_KEY", None)
+    assert rows
+    row = rows[-1]
+    assert row.result == "denied"
+    assert "Authentication required" in (row.deny_reason or "")
+
+
+def test_audit_not_found_outcome(client):
+    """404 on an audited action path → result='not_found': the action
+    targeted a missing resource — not allowed, not auth-denied."""
+    client.post("/api/scans/999999/cancel")
+    rows = [r for r in _audit_rows() if r.action == "scan.cancel"]
+    assert len(rows) >= 1
+    row = rows[-1]
+    assert row.result == "not_found"
+    assert row.deny_reason == "scan not found"
 
 
 def test_audit_request_meta_carries_no_auth_material(client):
