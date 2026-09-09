@@ -311,6 +311,29 @@ export default function ScanDetailPage({
         />
       </section>
 
+      {/* Report export */}
+      <Card className="rounded-xl border border-zinc-800 bg-zinc-900">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-zinc-400">
+            <IconExternalLink size={12} /> Report export
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-wrap gap-2">
+          {["md", "html", "json", "pdf"].map((fmt) => (
+            <Button
+              key={fmt}
+              variant="outline"
+              size="sm"
+              data-testid={`report-${fmt}`}
+              onClick={() => window.open(`/api/scans/${scan.id}/report?format=${fmt}`, "_blank")}
+            >
+              {fmt.toUpperCase()}
+            </Button>
+          ))}
+          <span className="ml-2 text-xs text-zinc-500">pdf via reportlab (on-the-fly)</span>
+        </CardContent>
+      </Card>
+
       {/* Tabs */}
       <div role="tablist" className="flex gap-6 border-b border-zinc-800">
         {(

@@ -745,26 +745,39 @@ def _project_evidence(findings: list[Finding]) -> list[EvidenceOut]:
 @router.get("/{scan_id}/report")
 async def get_scan_report(
     scan_id: int,
-    format: str = Query("md", pattern="^(md|html|json)$"),
+    format: str = Query("md", pattern="^(md|html|json|pdf)$"),
     session: AsyncSession = Depends(get_session),
 ):
-    """Return the on-disk report for a completed scan."""
+    """Return the on-disk report for a completed scan. pdf is generated on-the-fly via reportlab."""
     scan = await session.get(Scan, scan_id)
     if scan is None:
         raise HTTPException(status_code=404, detail="scan not found")
-    if not scan.output_dir:
+    if not scan.output_dir and format != "pdf":
         raise HTTPException(status_code=404, detail="report not yet available")
 
-    base = Path(scan.output_dir)
+    base = Path(scan.output_dir) if scan.output_dir else None
     if format == "md":
-        path = base / "summary.md"
+        path = base / "summary.md" if base else None
     elif format == "html":
-        path = base / "report.html"
-    else:
-        path = base / "findings.json"
+        path = base / "report.html" if base else None
+    elif format == "json":
+        path = base / "findings.json" if base else None
+    else:  # pdf
+        # Generate PDF on the fly from DB findings
+        from redveil_ui.api.pdf_report import generate_pdf
 
-    if not path.exists():
-        raise HTTPException(status_code=404, detail=f"{path.name} not found")
+        pdf_path = Path(f"/tmp/redveil-report-{scan_id}.pdf")
+        # Load findings for scan
+        result = await session.execute(select(Finding).where(Finding.scan_id == scan_id))
+        findings = list(result.scalars().all())
+        try:
+            generate_pdf(scan, findings, pdf_path)
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=500, detail=f"pdf generation failed: {e}")
+        return FileResponse(pdf_path, media_type="application/pdf", filename=f"scan-{scan_id}.pdf")
+
+    if not path or not path.exists():
+        raise HTTPException(status_code=404, detail=f"{path.name if path else 'report'} not found")
     media_type = "text/markdown" if format == "md" else (
         "text/html" if format == "html" else "application/json"
     )

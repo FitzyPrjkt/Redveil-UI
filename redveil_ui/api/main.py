@@ -40,7 +40,19 @@ from redveil_ui.api.routes import (
 from redveil_ui.api.models import Scan
 from redveil_ui.api.scanner import Scanner
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s | %(message)s")
+# Structured logging (0.3.0): LOG_FORMAT=json -> JSON lines for Loki/ELK
+_log_format = os.environ.get("LOG_FORMAT", os.environ.get("REDVEIL_LOG_FORMAT", "")).lower()
+if _log_format == "json":
+    try:
+        from pythonjsonlogger import jsonlogger  # type: ignore
+
+        _handler = logging.StreamHandler()
+        _handler.setFormatter(jsonlogger.JsonFormatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
+        logging.basicConfig(level=logging.INFO, handlers=[_handler])
+    except ImportError:
+        logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s | %(message)s")
+else:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s | %(message)s")
 log = logging.getLogger("redveil_ui.api")
 
 
