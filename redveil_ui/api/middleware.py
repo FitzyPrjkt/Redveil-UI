@@ -24,6 +24,7 @@ from redveil_ui.api.auth import (
     _resolve_api_key,
     validate_session_cookie,
 )
+from redveil_ui.api.db_retry import retry_on_lock
 
 COOKIE_NAME = "redveil_session"
 HEADER_NAME = "X-API-Key"
@@ -222,6 +223,12 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
             logging.getLogger(__name__).warning("audit write failed: %s", e)
         return response
 
+    # @retry_on_lock: same defense-in-depth as the finding-write path —
+    # one row per audited operator action, concurrent with scan writes.
+    # (Review note, Phase 1: plan Step 4 named the audit write a retry
+    # candidate; this closes that gap. Failures still land in the
+    # log-and-continue handler above.)
+    @retry_on_lock()
     async def _write_entry(self, request, response, action: str) -> None:
         from redveil_ui.api.db import get_session_factory
         from redveil_ui.api.models import AuditLog
