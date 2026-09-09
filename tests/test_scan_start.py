@@ -3,6 +3,11 @@
 Scan rows are inserted through the APP's engine (the routes read via
 get_session), on a dedicated event loop per test — TestClient runs its
 own loop internally, so DB setup uses asyncio.run() on the caller side.
+
+The TestClient fakes a loopback direct peer (client=127.0.0.1): the
+0.2.0 /start gate 401s unauthenticated LAN callers for destructive
+rows (see test_scan_start_auth_gate.py); here we assert the response
+matrix itself.
 """
 import asyncio
 
@@ -14,7 +19,7 @@ from fastapi.testclient import TestClient
 def client():
     from redveil_ui.api.main import app
 
-    with TestClient(app) as c:
+    with TestClient(app, client=("127.0.0.1", 50000)) as c:
         yield c
 
 
@@ -52,10 +57,10 @@ def _scan_status(scan_id: int) -> str:
 
 
 def test_start_pending_dispatches_running(client):
-    """Pending scan + /start → 202-ish success payload with running."""
+    """Pending scan + /start → 202 Accepted (dispatch) with running."""
     scan_id = _mk_scan("pending")
     resp = client.post(f"/api/scans/{scan_id}/start")
-    assert resp.status_code in (200, 202)
+    assert resp.status_code == 202
     body = resp.json()
     assert body["status"] == "running"
     assert body["scan_id"] == scan_id
@@ -121,10 +126,10 @@ def test_cancel_failed_conflicts(client):
 
 
 def test_cancel_pending_marks_cancelled(client):
-    """Pending scan + /cancel → row flips to cancelled (nothing to signal)."""
+    """Pending scan + /cancel → 202 dispatch, row flips to cancelled."""
     scan_id = _mk_scan("pending")
     resp = client.post(f"/api/scans/{scan_id}/cancel")
-    assert resp.status_code == 200
+    assert resp.status_code == 202
     body = resp.json()
     assert body["status"] == "cancelled"
     assert body.get("idempotent") is not True

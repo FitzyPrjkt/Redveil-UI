@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 def client():
     from redveil_ui.api.main import app
 
-    with TestClient(app) as c:
+    with TestClient(app, client=("127.0.0.1", 50000)) as c:
         yield c
 
 
@@ -41,10 +41,10 @@ def test_cancel_idempotent_after_cancelled(client):
 
 
 def test_cancel_response_shape(client):
-    """The 202/200 payload carries status + scan_id."""
+    """The 202/200 payload carries status + scan_id (202 for dispatch)."""
     scan_id = _mk_scan("pending")
     resp = client.post(f"/api/scans/{scan_id}/cancel")
-    assert resp.status_code == 200
+    assert resp.status_code == 202
     body = resp.json()
     assert body["status"] == "cancelled"
     assert body["scan_id"] == scan_id

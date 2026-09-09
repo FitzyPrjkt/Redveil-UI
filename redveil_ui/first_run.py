@@ -166,9 +166,12 @@ def run_init(
         if not Confirm.ask("Do you understand and accept?", default=False):
             raise typer.Exit(code=1)
 
-    # 5. Generate config
+    # 5. Generate config. Persist the operator's effective bind so
+    # `redveil-ui start` reuses it — LAN exposure is opt-in and was
+    # already confirmed above (the Y/n gate ran against the same
+    # effective_bind before anything was written).
     config = {
-        "host": DEFAULT_HOST,  # FIXED — LAN exposure is opt-in (not via init)
+        "host": effective_bind,
         "port": chosen_port,
         "data_dir": str(data_dir_path),
         "db_path": str(data_dir_path / "redveil-ui.db"),
@@ -218,7 +221,7 @@ def run_init(
     console.print(f"  Config:    {cfg_path}")
     console.print(f"  Database:  {config['db_path']}  [green](schema created)[/green]")
     console.print(f"  Reports:   {config['reports_dir']}")
-    console.print(f"  URL:       http://{DEFAULT_HOST}:{chosen_port}/")
+    console.print(f"  URL:       http://{effective_bind}:{chosen_port}/")
     console.print(
         f"  Safety:    gate_mode={config['gate_mode']} "
         f"max_destructive_level={config['max_destructive_level']} "

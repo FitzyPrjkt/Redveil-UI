@@ -128,6 +128,18 @@ app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(AuthMiddleware)
 # Audit AFTER auth in the stack: it reads request.state.is_authenticated.
 app.add_middleware(AuditLogMiddleware)
+# SlowAPIMiddleware INSIDE the audit/ auth middleware (S4 review fix):
+# it enforces the limiter's default_limits on every route — the 60/min
+# default advertised in the README is real, not just a dormant value.
+# Registered after AuditLogMiddleware so 429 responses still flow out
+# through the audit + security-headers layers. Rate limiting is a
+# transport concern: it must run OUTSIDE auth (429 even when
+# unauthenticated) but INSIDE the response-stamping middlewares.
+# REDVEIL_RATE_LIMIT_DEFAULT=0/minute disables the blanket default at
+# request time (decorated limits like login's 5/min stay active).
+from redveil_ui.api.middleware import _OptionalDefaultLimitMiddleware  # noqa: E402
+
+app.add_middleware(_OptionalDefaultLimitMiddleware)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 

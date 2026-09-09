@@ -2,8 +2,18 @@ import pytest
 from fastapi.testclient import TestClient
 
 from redveil_ui.api.auth import _cookie_value_for, issue_session_cookie
+from redveil_ui.api.middleware import reset_rate_limiter_for_tests
 
 API_KEY = "rvui_" + "a" * 32
+
+
+@pytest.fixture(autouse=True)
+def _isolated_limiter():
+    """The shared limiter is module-global; tests that hit /api/auth/login
+    must not inherit buckets from other test files (login: 5/min/IP)."""
+    reset_rate_limiter_for_tests()
+    yield
+    reset_rate_limiter_for_tests()
 
 
 @pytest.fixture

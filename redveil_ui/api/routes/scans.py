@@ -12,7 +12,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -87,7 +87,8 @@ async def create_scan(
     session: AsyncSession = Depends(get_session),
 ) -> ScanStatus:
     """Start a new scan. Returns immediately with a `pending` status;
-    the actual work happens in a background task fed by the SSE stream.
+    the actual work happens in a background task fed by the SSE stream
+    (202 Accepted, spec §5.5).
     """
     # Auth gate (0.2.0 Phase 3, spec §6.5): destructive scan creations
     # require authentication in LAN mode. Must run BEFORE the scope
@@ -152,6 +153,11 @@ async def create_scan(
             gate_mode=body.gate_mode,
         )
     )
+    # C2: drop the registry entry as soon as the task finishes so the
+    # map does not grow without bound over a long-lived server. The sid
+    # is bound via the default arg — a plain closure would read the
+    # loop variable late and pop the wrong id.
+    task.add_done_callback(lambda _t, sid=scan.id: _SCAN_TASKS.pop(sid, None))
     _register_scan_task(scan.id, task)
 
     return ScanStatus(
@@ -286,7 +292,7 @@ async def get_scan(scan_id: int, session: AsyncSession = Depends(get_session)) -
 # --- Scan control (0.2.0 Task 4.2, spec §5.5 response matrix) ---------------
 
 
-@router.post("/{scan_id}/start")
+@router.post("/{scan_id}/start", status_code=status.HTTP_202_ACCEPTED)
 async def start_scan(
     scan_id: int,
     request: Request,
@@ -294,16 +300,48 @@ async def start_scan(
 ):
     """Start a scan previously created in 'pending' state.
 
-    Idempotent for 'running' (200 + idempotent flag). Terminal states
-    are 409 Conflict — a finished scan cannot be restarted; create a
-    new scan via POST /api/scans instead.
+    Response matrix (spec §5.5): 202 Accepted when the start signal is
+    dispatched to a pending scan; 200 OK with "idempotent": true for a
+    scan already running. Terminal states are 409 Conflict — a finished
+    scan cannot be restarted; create a new scan via POST /api/scans
+    instead.
+
+    NOTE: per-scan scope_yaml is NOT persisted on the Scan row, so
+    /start always re-uses target.scope_yaml (create_scan honors the
+    caller's body.scope_yaml). A DB migration to store per-scan scope
+    is deliberately out of scope for 0.2.0.
     """
     scan = await session.get(Scan, scan_id)
     if scan is None:
         raise HTTPException(status_code=404, detail="scan not found")
 
+    # Auth gate (0.2.0 review S5, spec §6.5): /start dispatches the scan
+    # the row already classifies, so apply the same destructive
+    # classification as create_scan — to the PERSISTED fields, not a
+    # request body. Unauthenticated LAN callers get 401 before anything
+    # is dispatched; loopback is unaffected (short-circuited to True).
+    from redveil_ui.api.scanner import is_destructive_request
+
+    classification = {
+        "profile": scan.profile,
+        "max_destructive_level": scan.max_destructive_level,
+        "allow_destructive": scan.allow_destructive,
+    }
+    if is_destructive_request(classification) and not getattr(
+        request.state, "is_authenticated", False
+    ):
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication required for destructive scan operations on LAN",
+        )
+
     if scan.status == "running":
-        return {"status": "running", "scan_id": scan_id, "idempotent": True}
+        # Idempotent no-op → 200 (spec §5.5); the route-level 202 applies
+        # only to the dispatch case, so this branch returns a Response.
+        return JSONResponse(
+            {"status": "running", "scan_id": scan_id, "idempotent": True},
+            status_code=status.HTTP_200_OK,
+        )
     if scan.status in ("completed", "failed", "cancelled"):
         raise _terminal_state_error(scan, "restart")
 
@@ -325,11 +363,13 @@ async def start_scan(
             gate_mode=scan.gate_mode,
         )
     )
+    # C2: registry cleanup on completion (see create_scan).
+    task.add_done_callback(lambda _t, sid=scan.id: _SCAN_TASKS.pop(sid, None))
     _register_scan_task(scan.id, task)
     return {"status": "running", "scan_id": scan_id}
 
 
-@router.post("/{scan_id}/cancel")
+@router.post("/{scan_id}/cancel", status_code=status.HTTP_202_ACCEPTED)
 async def cancel_scan(
     scan_id: int,
     session: AsyncSession = Depends(get_session),
@@ -347,7 +387,11 @@ async def cancel_scan(
         raise HTTPException(status_code=404, detail="scan not found")
 
     if scan.status == "cancelled":
-        return {"status": "cancelled", "scan_id": scan_id, "idempotent": True}
+        # Idempotent no-op → 200 (spec §5.5); see start_scan's note.
+        return JSONResponse(
+            {"status": "cancelled", "scan_id": scan_id, "idempotent": True},
+            status_code=status.HTTP_200_OK,
+        )
     if scan.status in ("completed", "failed"):
         raise _terminal_state_error(scan, "cancel")
 

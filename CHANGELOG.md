@@ -11,25 +11,31 @@
   `redveil-ui auth rotate-key` invalidates all sessions.
 - **Auth flow**: HMAC session cookie (HttpOnly, SameSite=Strict,
   24 h TTL, conditional Secure) + `X-API-Key` header; `AuthMiddleware`
-  short-circuits loopback; destructive actions (active profile, L3+,
-  custom probes) require auth on LAN.
+  short-circuits loopback (XFF only from trusted proxies) and
+  validates hash-only installs (`auth.api_key_hash` in config);
+  destructive actions (active profile, L3+, custom probes, target
+  deletion, scan start of a destructive row) require auth on LAN.
 - **Scan control**: `POST /api/scans/{id}/start` + `/cancel`
-  (spec §5.5 response matrix: 202 / 200 idempotent / 409 with
-  timestamps); new `cancelled` terminal status across DB, SSE
-  (`scan.cancelled`), and dashboard (amber badge, distinct banner,
-  two-step Cancel button, History filter chip).
+  (spec §5.5 response matrix: 202 Accepted on dispatch, 200 with
+  `idempotent: true` for an already-satisfied action, 409 with
+  timestamps for terminal states); new `cancelled` terminal status
+  across DB, SSE (`scan.cancelled`), and dashboard (amber badge,
+  distinct banner, two-step Cancel button, History filter chip).
 - **Reliability**: SQLite WAL + `busy_timeout=5000` +
   `synchronous=NORMAL` on every connection; `retry_on_lock`
   decorator on write-heavy paths; startup recovery sweep for orphan
   `'running'` scans.
 - **Audit log**: append-only `audit_log` + `AuditLogMiddleware`
-  (scan.create/start/cancel, probe.custom, target.delete) +
+  (scan.create/start/cancel, probe.custom, target.delete; outcomes
+  allowed / denied / not_found) +
   `GET /api/audit` + `redveil-ui auth audit-rotate` (90 d retention,
   logs itself).
 - **Security headers**: CSP + nosniff + DENY + no-referrer +
   Permissions-Policy on every response.
-- **Rate limiting** (slowapi): 60/min default per IP, 5/min on login;
-  `X-Forwarded-For` honored only from trusted proxies.
+- **Rate limiting** (slowapi): 60/min default per IP on every route
+  (opt out with `REDVEIL_RATE_LIMIT_DEFAULT=0/minute`), 5/min on
+  login; `X-Forwarded-For` honored only from trusted proxies
+  (`REDVEIL_TRUSTED_PROXIES`, default loopback).
 - **`/healthz`** now reports per-status scan counts
   (`scans_pending|running|completed|failed|cancelled`) + db check.
 - **`POST /api/config/reset`** (replaces 501 stub): restores safety
