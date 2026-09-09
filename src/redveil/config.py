@@ -18,10 +18,16 @@ from __future__ import annotations
 
 from enum import Enum
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Phase A5: AI config imported lazily to avoid circular
+try:
+    from redveil.ai.config import AiConfig  # type: ignore
+except ImportError:
+    AiConfig = None  # type: ignore
 
 
 class SafetyProfile(str, Enum):
@@ -321,6 +327,10 @@ class RedVeilConfig(BaseSettings):
     reporting: ReportingConfig = Field(default_factory=ReportingConfig)
     environment: EnvironmentConfig = Field(default_factory=EnvironmentConfig)
     profile: SafetyProfile = SafetyProfile.PASSIVE
+    # Phase A3: optional OpenAPI spec content (yaml/json) to seed ApplicationModel
+    openapi_spec: str | None = Field(default=None, description="OpenAPI spec content (yaml/json) to seed endpoints")
+    # Phase A5: optional AI gateway config (provider-agnostic, any proxy web)
+    ai: Any | None = Field(default=None, description="AI gateway config (see redveil.ai.config.AiConfig)")
     # Phase A1: optional allowlist of check IDs to run. None/empty = all checks.
     # Validated lazily against registry in orchestrator/CLI (extra="ignore" keeps
     # old configs compatible). Stored as raw strings to avoid hard-coding the

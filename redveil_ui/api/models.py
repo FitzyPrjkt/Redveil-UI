@@ -62,6 +62,8 @@ class Scan(Base):
     )
     # Phase A1: optional allowlist of check IDs (JSON, None/empty = all)
     enabled_checks: Mapped[list | None] = mapped_column(JSON, nullable=True, default=None)
+    # Phase A3: optional OpenAPI spec content (Text, None/empty = none)
+    openapi_spec: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
 
     target: Mapped[Target] = relationship("Target", back_populates="scans")
     findings: Mapped[list["Finding"]] = relationship(

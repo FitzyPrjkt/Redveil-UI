@@ -95,14 +95,39 @@ class AttackSurfaceMapper:
             self._extract_endpoints_from_body(base, resp.body)
 
         # 4. Probe a small set of common API paths to seed the model
-        #     (these are the paths BOLA/BFLA checks will look at).
-        for path in (
-            "/api/profile/me", "/api/user/me", "/api/users/me", "/api/me",
-            "/api/orders", "/api/orders/1", "/api/admin/users",
-            "/api/v1/profile", "/api/v1/user", "/api/v1/users/me",
-            "/api/v1/admin/users", "/graphql",
-        ):
+        #     (these are the paths BOLA/BFLA checks will look at) — now via WordlistManager (A2)
+        try:
+            from redveil.discovery.wordlist import WordlistManager
+
+            seeds = WordlistManager.builtin().seed_paths
+        except Exception:
+            seeds = [
+                "/api/profile/me", "/api/user/me", "/api/users/me", "/api/me",
+                "/api/orders", "/api/orders/1", "/api/admin/users",
+                "/api/v1/profile", "/api/v1/user", "/api/v1/users/me",
+                "/api/v1/admin/users", "/graphql",
+            ]
+        for path in seeds:
             self._add_endpoint_if_new("GET", path, source="seed")
+
+        # 4b. OpenAPI spec seeding (A3) — if config provides spec content, parse and merge
+        openapi_spec = getattr(self._config, "openapi_spec", None)
+        if openapi_spec:
+            try:
+                from redveil.attack_surface.openapi import load_openapi_url_content, merge_into_model
+
+                # Try yaml first, fallback json
+                fmt = "json" if openapi_spec.strip().startswith("{") else "yaml"
+                eps = load_openapi_url_content(openapi_spec, fmt=fmt)
+                merge_into_model(self._model, eps)
+            except Exception as e:
+                # Non-fatal: log via bus if available
+                try:
+                    from redveil.core.event_bus import Event, EventType
+
+                    self._http  # noqa
+                except Exception:
+                    pass
 
         return self._model
 

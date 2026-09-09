@@ -115,6 +115,11 @@ class ScanCreate(BaseModel):
         default=None,
         description="Optional allowlist of check IDs to run (e.g. ['sqli-time-based','xss-reflected']). None/empty = all.",
     )
+    # Phase A3: optional OpenAPI spec content (yaml/json) to seed ApplicationModel
+    openapi_spec: str | None = Field(
+        default=None,
+        description="OpenAPI spec content (yaml/json) to seed ApplicationModel endpoints (A3). Max 200KB.",
+    )
 
     # Allowed destructive level values (both forms accepted on input).
     _DESTRUCTIVE_LEVELS: ClassVar[set[str]] = {
@@ -154,6 +159,24 @@ class ScanCreate(BaseModel):
                 f"gate_mode must be one of {sorted(cls._GATE_MODES)}, got {v!r}"
             )
         return v
+
+    @field_validator("openapi_spec", mode="before")
+    @classmethod
+    def _validate_openapi_spec(cls, v: Any) -> str | None:
+        if v is None:
+            return None
+        if not isinstance(v, str):
+            raise ValueError("openapi_spec must be a string")
+        s = v.strip()
+        if not s:
+            return None
+        if len(s) > 200_000:
+            raise ValueError("openapi_spec too large (max 200KB)")
+        # Basic sanity: must look like yaml/json with paths or openapi
+        lower = s.lower()
+        if "paths" not in lower and "openapi" not in lower and "swagger" not in lower:
+            raise ValueError("openapi_spec must contain 'paths' or 'openapi'/'swagger'")
+        return s
 
     @field_validator("enabled_checks", mode="before")
     @classmethod
@@ -241,6 +264,8 @@ class ScanOut(BaseModel):
     gate_mode: str = "non_interactive"
     # Phase A1: allowlist (None/empty = all)
     enabled_checks: list[str] | None = None
+    # Phase A3: OpenAPI spec
+    openapi_spec: str | None = None
 
 
 class ScanStatus(BaseModel):

@@ -236,8 +236,17 @@ def scan(
         None, "--checks-file",
         help="Path to file with one check ID per line (alternative to --checks).",
     ),
+    openapi: Path | None = typer.Option(
+        None, "--openapi",
+        help="Path to OpenAPI spec (yaml/json) to seed ApplicationModel endpoints (A3).",
+    ),
 ):
     """Run a full scan against the target."""
+    # Phase A3: load OpenAPI spec if provided
+    openapi_spec: str | None = None
+    if openapi and openapi.exists():
+        openapi_spec = openapi.read_text(encoding="utf-8")
+
     # Phase A1: parse enabled_checks from --checks / --checks-file
     enabled_checks: list[str] | None = None
     if checks_file and checks_file.exists():
@@ -269,6 +278,8 @@ def scan(
         # If scope YAML already has enabled_checks, CLI overrides it
         if enabled_checks is not None:
             cfg.enabled_checks = enabled_checks
+        if openapi_spec is not None:
+            cfg.openapi_spec = openapi_spec
     else:
         from urllib.parse import urlparse
         host = urlparse(target).hostname or target
@@ -284,6 +295,7 @@ def scan(
             profile=profile,
             reporting=ReportingConfig(output_dir=output),
             enabled_checks=enabled_checks,
+            openapi_spec=openapi_spec,
         )
     cfg.profile = profile
     cfg.limits.requests_per_second = rps
@@ -294,6 +306,8 @@ def scan(
     cfg.authorization.max_destructive_level = max_destructive_level
     if enabled_checks is not None:
         cfg.enabled_checks = enabled_checks
+    if openapi_spec is not None:
+        cfg.openapi_spec = openapi_spec
 
     try:
         asyncio.run(_run_scan(cfg, gate_mode=gate_mode))

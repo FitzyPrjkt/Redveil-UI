@@ -25,7 +25,8 @@ from redveil.plugins.base import (
 )
 from redveil.util.urls import join_url
 
-# (path, kind, severity)
+# (path, kind, severity) — now sourced from WordlistManager.builtin() for centralization (A2)
+# Keep local mapping for severity/kind, but paths come from manager
 _DEBUG_PATHS = [
     ("/.env", "exposed_env", Severity.HIGH),
     ("/debug", "exposed_debug", Severity.HIGH),
@@ -46,6 +47,11 @@ _DEBUG_PATHS = [
     ("/.well-known/", "well_known", Severity.INFO),
     ("/api/source-map", "exposed_source_map", Severity.MEDIUM),
 ]
+# A2: WordlistManager is the single source of truth for discovery paths
+try:
+    from redveil.discovery.wordlist import WordlistManager
+except ImportError:
+    WordlistManager = None  # type: ignore
 
 _VERSION_PATTERN = re.compile(r"([A-Za-z][A-Za-z0-9._-]*)/(\d+\.\d+(?:\.\d+)?)")
 _STACK_TRACE_PATTERNS = [
@@ -152,7 +158,16 @@ class InfoDisclosureCheck(Check):
                 })
                 break
 
-        # 2. Debug/info paths
+        # 2. Debug/info paths (via WordlistManager for dedup + soft-404)
+        baseline_404_body: str | None = None
+        # Fetch a random 404 baseline for soft-404 detection
+        try:
+            rnd_req = Request(method="GET", url=join_url(base, f"/__redveil_404_{__import__('secrets').token_hex(4)}"), purpose="discovery")
+            rnd_resp = await self.deps.http.send(rnd_req)
+            if rnd_resp.status_code in (200, 404):
+                baseline_404_body = rnd_resp.body
+        except Exception:
+            pass
         for path, kind, sev in _DEBUG_PATHS:
             try:
                 req = Request(method="GET", url=join_url(base, path), purpose="discovery")
@@ -160,9 +175,15 @@ class InfoDisclosureCheck(Check):
             except Exception:
                 continue
             if resp.status_code == 200 and len(resp.body) > 0:
-                # Some "well-known" paths are normal — skip unless they look like info leak
                 if kind == "well_known":
                     continue
+                # A2 soft-404 guard
+                if WordlistManager and baseline_404_body is not None:
+                    try:
+                        if WordlistManager.is_soft_404(resp, baseline_404_body):
+                            continue
+                    except Exception:
+                        pass
                 candidates.append({
                     "kind": kind,
                     "value": path,

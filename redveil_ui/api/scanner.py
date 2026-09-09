@@ -120,6 +120,7 @@ def _build_config(
     max_destructive_level: str = "L2",
     allow_destructive: bool = False,
     enabled_checks: list[str] | None = None,
+    openapi_spec: str | None = None,
 ) -> RedVeilConfig:
     """Construct a RedVeilConfig from UI-friendly kwargs.
 
@@ -195,6 +196,7 @@ def _build_config(
         environment=EnvironmentConfig(environments="dev"),
         profile=profile_enum,
         enabled_checks=enabled_checks,
+        openapi_spec=openapi_spec,
     )
 
 
@@ -262,6 +264,7 @@ class Scanner:
         allow_destructive: bool = False,
         gate_mode: str = "non_interactive",
         enabled_checks: list[str] | None = None,
+        openapi_spec: str | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         """Async-iterator wrapper around a single scan run.
 
@@ -283,6 +286,7 @@ class Scanner:
                 allow_destructive=allow_destructive,
                 gate_mode=gate_mode,
                 enabled_checks=enabled_checks,
+                openapi_spec=openapi_spec,
             )
         )
         try:
@@ -331,6 +335,7 @@ class Scanner:
         allow_destructive: bool = False,
         gate_mode: str = "non_interactive",
         enabled_checks: list[str] | None = None,
+        openapi_spec: str | None = None,
     ) -> None:
         """Build the redveil stack, hook events, run the scan."""
         safe_name = _safe_target_name(target_name or target_url)
@@ -347,6 +352,7 @@ class Scanner:
                 max_destructive_level=max_destructive_level,
                 allow_destructive=allow_destructive,
                 enabled_checks=enabled_checks,
+                openapi_spec=openapi_spec,
             )
         except Exception as e:
             await self._put(
@@ -383,6 +389,7 @@ class Scanner:
                 "allow_destructive": allow_destructive,
                 "gate_mode": gate_mode,
                 "enabled_checks": enabled_checks,
+                "openapi_spec": bool(openapi_spec),
                 "output_dir": str(target_output_dir),
                 "started_at": datetime.now(UTC).isoformat(),
             },

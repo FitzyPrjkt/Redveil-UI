@@ -32,6 +32,7 @@ from redveil_ui.api.routes import (
     lab,
     probes,
     replay,
+    replay_raw,
     scans,
     schedules,
     scope,
@@ -95,6 +96,8 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
             cols2 = {row[1] for row in result2.fetchall()}
             if "enabled_checks" not in cols2:
                 await conn.execute(text("ALTER TABLE scans ADD COLUMN enabled_checks JSON"))
+            if "openapi_spec" not in cols2:
+                await conn.execute(text("ALTER TABLE scans ADD COLUMN openapi_spec TEXT"))
         except Exception:
             pass
     log.info("DB schema initialized at %s", engine.url)
@@ -259,6 +262,7 @@ app.include_router(scope.router, prefix="/api", tags=["scope"])
 app.include_router(issue_definitions.router, prefix="/api", tags=["issue-definitions"])
 app.include_router(entropy.router, prefix="/api/entropy", tags=["entropy"])
 app.include_router(replay.router, prefix="/api/findings", tags=["replay"])
+app.include_router(replay_raw.router, prefix="/api/replay", tags=["replay-raw"])
 app.include_router(probes.router, prefix="/api/probes", tags=["probes"])
 app.include_router(audit.router, prefix="/api/audit", tags=["audit"])
 app.include_router(schedules.router, prefix="/api/schedules", tags=["schedules"])
