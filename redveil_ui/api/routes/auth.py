@@ -22,7 +22,7 @@ from typing import Optional
 from redveil_ui.api.auth import (
     _has_config_hash,
     _key_matches_config_hash,
-    _resolve_api_key,
+    _resolve_api_keys,
     issue_session_cookie,
 )
 from redveil_ui.api.middleware import limiter
@@ -47,23 +47,21 @@ def _effective_scheme(request: Request) -> str:
 @router.post("/login")
 @limiter.limit(LOGIN_RATE_LIMIT)
 def login(request: Request, body: LoginIn | None = None):
-    expected = _resolve_api_key()
+    expected_keys = _resolve_api_keys()
     supplied = body.api_key if (body is not None and body.api_key) else None
     if not supplied:
         supplied = request.headers.get("x-api-key")
 
-    if expected is not None:
-        # Raw key resolvable (env var or .api_key file): compare directly.
-        if not supplied or not hmac.compare_digest(supplied, expected):
-            raise HTTPException(status_code=401, detail="Invalid API key")
-        api_key = expected
-    elif _has_config_hash():
-        # Hash-only install (auth.api_key_hash in config.yaml): no raw
-        # key lives on the server, so validate the supplied key against
-        # the stored sha256 in constant time (S2 review fix — the hash
-        # previously failed closed at startup but could never log in).
-        if not supplied or not _key_matches_config_hash(supplied):
-            raise HTTPException(status_code=401, detail="Invalid API key")
+    # Try raw keys first (env/file), then hash list (config) as fallback — multi-key
+    matched = None
+    for k in expected_keys:
+        if supplied and hmac.compare_digest(supplied, k):
+            matched = k
+            break
+    if matched is not None:
+        api_key = matched
+    elif _has_config_hash() and supplied and _key_matches_config_hash(supplied):
+        # Hash-only or additional keys in config
         api_key = supplied
     else:
         raise HTTPException(status_code=401, detail="Invalid API key")

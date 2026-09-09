@@ -72,23 +72,49 @@ def _load_auth_hash() -> str | None:
     Tolerates (and strips) the legacy "sha256:" prefix written by
     `redveil-ui init` / `auth rotate-key`.
     """
+    hashes = _load_auth_hashes()
+    return hashes[0] if hashes else None
+
+
+def _load_auth_hashes() -> list[str]:
+    """Read all auth hashes (single + list) from config.yaml."""
     config_path = _config_path()
     if not config_path.is_file():
-        return None
+        return []
     try:
         import yaml
 
         with open(config_path) as f:
             cfg = yaml.safe_load(f) or {}
-        stored = cfg.get("auth", {}).get("api_key_hash")
-        if not stored:
-            return None
-        stored = str(stored).strip()
-        if stored.lower().startswith("sha256:"):
-            stored = stored[len("sha256:"):]
-        return stored or None
+        auth = cfg.get("auth", {}) or {}
+        out: list[str] = []
+        # Single
+        single = auth.get("api_key_hash")
+        if single:
+            s = str(single).strip()
+            if s.lower().startswith("sha256:"):
+                s = s[len("sha256:") :]
+            if s:
+                out.append(s)
+        # List
+        lst = auth.get("api_key_hashes") or auth.get("api_keys")
+        if isinstance(lst, list):
+            for item in lst:
+                s = str(item).strip()
+                if s.lower().startswith("sha256:"):
+                    s = s[len("sha256:") :]
+                if s:
+                    out.append(s)
+        # Dedupe preserve order
+        seen: set[str] = set()
+        uniq: list[str] = []
+        for h in out:
+            if h not in seen:
+                seen.add(h)
+                uniq.append(h)
+        return uniq
     except Exception:  # noqa: BLE001 — corrupt config must never 500 the auth path
-        return None
+        return []
 
 
 def _resolve_api_key() -> str | None:
@@ -102,41 +128,81 @@ def _resolve_api_key() -> str | None:
          request-time middleware and login route use that validator
          so hash-only installs still authenticate.
     """
+    keys = _resolve_api_keys()
+    return keys[0] if keys else None
+
+
+def _resolve_api_keys() -> list[str]:
+    """All resolvable raw keys (env comma-separated + file)."""
+    out: list[str] = []
     env_key = os.environ.get("REDVEIL_UI_API_KEY")
     if env_key:
-        return env_key
-
+        # Support REDVEIL_UI_API_KEY=rvui_aaa,rvui_bbb or single
+        for part in env_key.split(","):
+            p = part.strip()
+            if p:
+                out.append(p)
+    # Also support REDVEIL_UI_API_KEYS plural
+    env_keys = os.environ.get("REDVEIL_UI_API_KEYS")
+    if env_keys:
+        for part in env_keys.split(","):
+            p = part.strip()
+            if p:
+                out.append(p)
     api_key_file = Path.home() / ".redveil-ui" / ".api_key"
     if api_key_file.is_file():
         try:
-            return api_key_file.read_text().strip()
+            txt = api_key_file.read_text().strip()
+            # File may contain one key or comma-separated
+            for part in txt.split(","):
+                p = part.strip()
+                if p:
+                    out.append(p)
         except OSError:
             pass
-
-    # Config-file hash is validated at request time via
-    # _key_matches_config_hash()
-    return None
+    # Dedupe
+    seen: set[str] = set()
+    uniq: list[str] = []
+    for k in out:
+        if k not in seen:
+            seen.add(k)
+            uniq.append(k)
+    return uniq
 
 def _has_config_hash() -> bool:
-    """Check if auth.api_key_hash is set in the config file."""
-    return _load_auth_hash() is not None
+    """Check if any auth hash is set in the config file."""
+    return len(_load_auth_hashes()) > 0
 
 
 def _key_matches_config_hash(supplied: str) -> bool:
-    """Validate a raw key against the stored auth.api_key_hash.
+    """Validate a raw key against any stored hash (single or list).
 
-    Constant-time comparison of sha256(supplied) against the stored
+    Constant-time comparison of sha256(supplied) against each stored
     hex digest. Used by the login route and the middleware's header
-    branch so a hash-only install (REDVEIL_UI_API_KEY unset, no
-    .api_key file, only the config hash) can still authenticate.
+    branch so a hash-only install can still authenticate.
     """
     if not supplied:
         return False
-    stored = _load_auth_hash()
-    if not stored:
+    hashes = _load_auth_hashes()
+    if not hashes:
         return False
     supplied_hex = hashlib.sha256(supplied.encode()).hexdigest()
-    return hmac.compare_digest(supplied_hex, stored)
+    # Use any match, but still constant-time per compare
+    for h in hashes:
+        if hmac.compare_digest(supplied_hex, h):
+            return True
+    return False
+
+
+def _key_matches_any(stored_hashes: list[str], supplied: str) -> bool:
+    """Helper for multi-key: check supplied against list of hashes."""
+    if not supplied or not stored_hashes:
+        return False
+    supplied_hex = hashlib.sha256(supplied.encode()).hexdigest()
+    for h in stored_hashes:
+        if hmac.compare_digest(supplied_hex, h):
+            return True
+    return False
 
 def check_auth_or_fail(bind: str) -> None:
     """Hard fail-closed check at server startup.
@@ -187,3 +253,11 @@ def validate_session_cookie(cookie_value: str, api_key: str) -> bool:
         api_key.encode(), str(issued_at).encode(), hashlib.sha256
     ).hexdigest()[:32]
     return hmac.compare_digest(provided_digest, expected)
+
+
+def validate_session_cookie_any(cookie_value: str, api_keys: list[str]) -> bool:
+    """Try cookie against any of the known raw keys (multi-key)."""
+    for k in api_keys:
+        if validate_session_cookie(cookie_value, k):
+            return True
+    return False

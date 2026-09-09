@@ -22,7 +22,9 @@ from redveil_ui.api.auth import (
     _has_config_hash,
     _key_matches_config_hash,
     _resolve_api_key,
+    _resolve_api_keys,
     validate_session_cookie,
+    validate_session_cookie_any,
 )
 from redveil_ui.api.db_retry import retry_on_lock
 
@@ -77,9 +79,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         # LAN mode: require either cookie or header.
-        api_key = _resolve_api_key()
+        api_keys = _resolve_api_keys()
+        api_key = api_keys[0] if api_keys else None
         has_hash = _has_config_hash()
-        if api_key is None and not has_hash:
+        if not api_keys and not has_hash:
             # No key configured at all — middleware can't authenticate
             # anyone. Per-route logic must handle this (and refuse to
             # process destructive requests).
@@ -90,14 +93,26 @@ class AuthMiddleware(BaseHTTPMiddleware):
         # hash in constant time.
         header_key = request.headers.get(HEADER_NAME)
         if header_key:
-            if api_key and _hmac.compare_digest(header_key, api_key):
-                request.state.is_authenticated = True
-                request.state.api_key = api_key
-                return await call_next(request)
-            if api_key is None and has_hash and _key_matches_config_hash(header_key):
+            # Multi-key: check any raw key
+            for k in api_keys:
+                if _hmac.compare_digest(header_key, k):
+                    request.state.is_authenticated = True
+                    request.state.api_key = k
+                    return await call_next(request)
+            if not api_keys and has_hash and _key_matches_config_hash(header_key):
                 # Hash-only mode: the raw key never lived on the server,
                 # so we cannot echo it back onto state.api_key.
                 request.state.is_authenticated = True
+                return await call_next(request)
+            # Also try hash list even when raw keys exist (e.g. second key is hash-only)
+            if has_hash and _key_matches_config_hash(header_key):
+                request.state.is_authenticated = True
+                # If header matches a hash, we don't know which raw key, but mark authenticated
+                # Try to set api_key to the matching raw if any
+                for k in api_keys:
+                    if _hmac.compare_digest(header_key, k):
+                        request.state.api_key = k
+                        break
                 return await call_next(request)
 
         # Try cookie. A cookie HMAC can only be verified against the RAW
@@ -106,10 +121,15 @@ class AuthMiddleware(BaseHTTPMiddleware):
         # be validated (login still works and issues a cookie, but the
         # middleware falls back to the X-API-Key header path).
         cookie_value = request.cookies.get(COOKIE_NAME)
-        if cookie_value and api_key and validate_session_cookie(cookie_value, api_key):
-            request.state.is_authenticated = True
-            request.state.api_key = api_key
-            return await call_next(request)
+        if cookie_value and api_keys:
+            if validate_session_cookie_any(cookie_value, api_keys):
+                # Find which key signed it for state
+                for k in api_keys:
+                    if validate_session_cookie(cookie_value, k):
+                        request.state.api_key = k
+                        break
+                request.state.is_authenticated = True
+                return await call_next(request)
 
         return await call_next(request)
 
