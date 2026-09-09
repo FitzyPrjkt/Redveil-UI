@@ -272,76 +272,113 @@ def get_tls_paths(config_dir: Path | None = None) -> tuple[Path, Path, Path]:
 
 
 def _install_firefox_ca(ca_pem: Path) -> list[str]:
-    """Install CA to Firefox profiles via certutil (if available)."""
+    """Install CA to all Firefox-based forks + Flatpak via certutil."""
     import shutil
 
     msgs: list[str] = []
     if shutil.which("certutil") is None:
         return ["certutil not found — Firefox auto-install skipped (install libnss3-tools)"]
-    # Find Firefox profiles
-    moz_dir = Path.home() / ".mozilla" / "firefox"
-    if not moz_dir.is_dir():
-        return ["No Firefox profiles found — skipping Firefox"]
-    for profile in moz_dir.glob("*.default*"):
-        if not profile.is_dir():
+
+    # All Firefox-based profile roots (native + Flatpak)
+    base_dirs = [
+        Path.home() / ".mozilla" / "firefox",  # Firefox, ESR
+        Path.home() / ".librewolf",  # LibreWolf
+        Path.home() / ".waterfox",  # Waterfox
+        Path.home() / ".floorp",  # Floorp
+        Path.home() / ".zen",  # Zen Browser
+        Path.home() / ".mullvad-browser",  # Mullvad Browser (also Tor-based but we try)
+        Path.home() / ".moonchild productions" / "pale moon",  # Pale Moon
+        Path.home() / ".moonchild productions" / "basilisk",  # Basilisk
+        Path.home() / ".var" / "app" / "org.mozilla.firefox" / ".mozilla" / "firefox",  # Flatpak Firefox
+        Path.home() / ".var" / "app" / "io.gitlab.librewolf" / ".librewolf",  # Flatpak LibreWolf
+        Path.home() / ".var" / "app" / "org.mullvad.MullvadBrowser" / ".mullvad-browser",  # Flatpak Mullvad
+    ]
+    # Also handle Waterfox classic: ~/.waterfox/*.default*
+    found_any = False
+    for base in base_dirs:
+        if not base.is_dir():
             continue
-        db_arg = f"sql:{profile}"
-        # Check if already exists
-        try:
-            result = subprocess.run(
-                ["certutil", "-L", "-d", db_arg],
-                capture_output=True,
-                text=True,
-            )
-            if "redveil Local CA" in result.stdout:
-                msgs.append(f"Firefox {profile.name}: already trusted")
-                continue
-        except Exception:
-            pass
-        try:
-            subprocess.run(
-                ["certutil", "-A", "-n", "redveil Local CA", "-t", "C,,", "-i", str(ca_pem), "-d", db_arg],
-                check=True,
-                capture_output=True,
-            )
-            msgs.append(f"Firefox {profile.name}: installed")
-        except subprocess.CalledProcessError as e:
-            msgs.append(f"Firefox {profile.name}: failed ({e})")
-        except Exception as e:  # noqa: BLE001
-            msgs.append(f"Firefox {profile.name}: failed ({e})")
-    if not msgs:
-        msgs.append("No Firefox profiles matched")
+        # Some forks store profiles directly under base, some under base/*.default*
+        # Try both: base itself if it is a profile (contains cert9.db), else glob
+        candidates: list[Path] = []
+        if (base / "cert9.db").exists() or (base / "cert8.db").exists():
+            candidates.append(base)
+        candidates.extend([p for p in base.glob("*.default*") if p.is_dir()])
+        # LibreWolf/Floorp/Zen may use *.<profile> without .default, so also glob *
+        if not candidates:
+            candidates.extend([p for p in base.iterdir() if p.is_dir() and (p / "cert9.db").exists()])
+        for profile in candidates:
+            found_any = True
+            label = f"{base.name}/{profile.name}" if profile != base else base.name
+            db_arg = f"sql:{profile}"
+            try:
+                result = subprocess.run(["certutil", "-L", "-d", db_arg], capture_output=True, text=True)
+                if "redveil Local CA" in result.stdout:
+                    msgs.append(f"Firefox {label}: already trusted")
+                    continue
+            except Exception:
+                pass
+            try:
+                subprocess.run(["certutil", "-A", "-n", "redveil Local CA", "-t", "C,,", "-i", str(ca_pem), "-d", db_arg], check=True, capture_output=True)
+                msgs.append(f"Firefox {label}: installed")
+            except subprocess.CalledProcessError as e:
+                msgs.append(f"Firefox {label}: failed ({e})")
+            except Exception as e:  # noqa: BLE001
+                msgs.append(f"Firefox {label}: failed ({e})")
+    if not found_any:
+        # Fallback scan for any firefox-like dir under ~/.var/app
+        var_app = Path.home() / ".var" / "app"
+        if var_app.is_dir():
+            for app_dir in var_app.iterdir():
+                if "firefox" in app_dir.name.lower() or "librewolf" in app_dir.name.lower():
+                    for profile in app_dir.rglob("cert9.db"):
+                        msgs.append(f"Firefox {app_dir.name}: found {profile.parent} (manual import needed)")
+        if not msgs:
+            msgs.append("No Firefox-based profiles found — skipping Firefox")
     return msgs
 
 
 def _install_chrome_nss_ca(ca_pem: Path) -> list[str]:
-    """Install CA to Chrome/Chromium NSS DB (~/.pki/nssdb) if exists."""
+    """Install CA to Chrome/Chromium + Brave/Vivaldi etc. NSS DBs if they exist.
+
+    Chromium-based browsers on Linux that don't use system p11-kit still check
+    ~/.pki/nssdb. Brave/Vivaldi/Opera etc. also fall back there, so one write
+    covers all of them. Firefox forks are handled separately.
+    """
     import shutil
 
     if shutil.which("certutil") is None:
         return []
-    nss_db = Path.home() / ".pki" / "nssdb"
-    if not nss_db.is_dir():
-        return []
-    try:
-        result = subprocess.run(
-            ["certutil", "-L", "-d", f"sql:{nss_db}"],
-            capture_output=True,
-            text=True,
-        )
-        if "redveil Local CA" in result.stdout:
-            return ["Chrome NSS: already trusted"]
-    except Exception:
+    msgs: list[str] = []
+    # Primary NSS DB used by Chrome/Chromium and most forks on Linux
+    nss_dbs = [
+        Path.home() / ".pki" / "nssdb",  # Chrome, Chromium, Brave, Vivaldi, Opera, Edge, Arc, Thorium, etc.
+    ]
+    # Some forks keep their own NSS DB (rare on Linux, but check)
+    brave_nss = Path.home() / ".config" / "BraveSoftware" / "Brave-Browser"
+    if brave_nss.is_dir():
+        # Brave still uses .pki/nssdb on Linux, but check anyway
         pass
-    try:
-        subprocess.run(
-            ["certutil", "-A", "-n", "redveil Local CA", "-t", "C,,", "-i", str(ca_pem), "-d", f"sql:{nss_db}"],
-            check=True,
-            capture_output=True,
-        )
-        return ["Chrome NSS: installed"]
-    except Exception as e:  # noqa: BLE001
-        return [f"Chrome NSS: failed ({e})"]
+    for nss_db in nss_dbs:
+        if not nss_db.is_dir():
+            continue
+        try:
+            result = subprocess.run(["certutil", "-L", "-d", f"sql:{nss_db}"], capture_output=True, text=True)
+            if "redveil Local CA" in result.stdout:
+                msgs.append("Chrome NSS (~/.pki/nssdb): already trusted (covers Chrome, Chromium, Edge, Brave, Vivaldi, Opera, Arc, etc.)")
+                continue
+        except Exception:
+            pass
+        try:
+            subprocess.run(["certutil", "-A", "-n", "redveil Local CA", "-t", "C,,", "-i", str(ca_pem), "-d", f"sql:{nss_db}"], check=True, capture_output=True)
+            msgs.append("Chrome NSS (~/.pki/nssdb): installed (covers all Chromium-based)")
+        except Exception as e:  # noqa: BLE001
+            msgs.append(f"Chrome NSS: failed ({e})")
+    # WebKit (GNOME Web/Epiphany) uses system store, already covered by system install.
+    # Tor Browser is intentionally not auto-trusted (privacy isolation) — user must import manually if they really want.
+    if not msgs:
+        msgs.append("Chrome NSS: no DB found (Chromium will use system store, already covered)")
+    return msgs
 
 
 def install_ca(config_dir: Path | None = None) -> str:
@@ -393,10 +430,12 @@ def install_ca(config_dir: Path | None = None) -> str:
     else:
         msgs.append(f"System: unsupported OS {system}")
 
-    # 2. Firefox (all profiles) — covers Firefox separate store
+    # 2. Firefox-based (all forks + Flatpak) — covers Firefox, ESR, LibreWolf, Waterfox, Floorp, Zen, Pale Moon, Basilisk, Mullvad
     msgs.extend(_install_firefox_ca(ca_pem))
-    # 3. Chrome NSS (Linux) — covers Chrome/Chromium NSS DB
+    # 3. Chrome NSS (Linux) — covers all Chromium-based via ~/.pki/nssdb (Chrome, Edge, Brave, Vivaldi, Opera, etc.)
+    #    System store already covers WebKit (Safari macOS, GNOME Web/Epiphany, Falkon) and most Chromium via p11-kit.
     msgs.extend(_install_chrome_nss_ca(ca_pem))
+    # 4. Tor Browser is intentionally not auto-trusted — it isolates its own profile under ~/tor-browser* and should stay isolated.
 
     # Also handle case where certutil missing for Firefox/Chrome
     if not any("Firefox" in m for m in msgs):
