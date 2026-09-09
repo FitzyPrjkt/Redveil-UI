@@ -274,7 +274,7 @@ function StatTile({
   return (
     <Card
       data-testid={testId}
-      className="rounded-xl border border-zinc-800 bg-zinc-900"
+      className="rounded-lg border-0 bg-zinc-950"
     >
       <CardHeader className="pb-2">
         <CardTitle className="text-xs font-medium uppercase tracking-wider text-zinc-400">

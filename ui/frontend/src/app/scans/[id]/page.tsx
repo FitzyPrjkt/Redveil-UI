@@ -65,7 +65,7 @@ function severityClass(severity: string): string {
     case "medium":
       return "bg-yellow-500/15 text-yellow-300 border-yellow-500/30";
     case "low":
-      return "bg-zinc-700/40 text-zinc-300 border-zinc-600/30";
+      return "bg-sky-500/15 text-sky-300 border-sky-500/30";
     default:
       return "bg-zinc-800 text-zinc-400 border-zinc-700";
   }
@@ -446,12 +446,6 @@ function SeverityTile({
   tone: "red" | "yellow" | "zinc";
   dataTestid: string;
 }) {
-  const toneClass =
-    tone === "red"
-      ? "bg-red-500/10 border-red-500/20"
-      : tone === "yellow"
-      ? "bg-yellow-500/10 border-yellow-500/20"
-      : "bg-sky-500/10 border-sky-500/20";
   const textClass =
     tone === "red"
       ? "text-red-300"
@@ -461,7 +455,7 @@ function SeverityTile({
   return (
     <Card
       data-testid={dataTestid}
-      className={cn("rounded-xl border p-5", toneClass)}
+      className="rounded-lg border-0 bg-zinc-950 p-5"
     >
       <CardContent className="space-y-1 p-0">
         <div className={cn("text-4xl font-bold", textClass)}>{count}</div>

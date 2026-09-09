@@ -47,7 +47,7 @@ function severityClass(severity: string): string {
     case "medium":
       return "bg-yellow-500/15 text-yellow-300 border-yellow-500/30";
     case "low":
-      return "bg-zinc-700/40 text-zinc-300 border-zinc-600/30";
+      return "bg-sky-500/15 text-sky-300 border-sky-500/30";
     default:
       return "bg-zinc-800 text-zinc-400 border-zinc-700";
   }
