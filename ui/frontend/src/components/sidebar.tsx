@@ -12,6 +12,7 @@ import {
   IconSettings,
   IconShieldCheck,
   IconWaveSine,
+  IconClock,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 
@@ -26,6 +27,7 @@ const navItems: NavItem[] = [
   { label: "Targets", href: "/targets", icon: IconTarget },
   { label: "Scan History", href: "/scans", icon: IconHistory },
   { label: "Findings", href: "/findings", icon: IconBug },
+  { label: "Schedules", href: "/schedules", icon: IconClock },
   { label: "Plugins", href: "/plugins", icon: IconPuzzle },
   { label: "Probe Builder", href: "/probe-builder", icon: IconWaveSine },
   { label: "Settings", href: "/settings", icon: IconSettings },

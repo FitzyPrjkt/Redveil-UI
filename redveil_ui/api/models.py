@@ -117,3 +117,25 @@ class AuditLog(Base):
     deny_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     __table_args__ = (Index("idx_audit_ts", "ts"),)
+
+
+class ScheduledScan(Base):
+    """Cron-scheduled scan (0.3.0)."""
+
+    __tablename__ = "scheduled_scans"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    target_id: Mapped[int] = mapped_column(
+        ForeignKey("targets.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    cron: Mapped[str] = mapped_column(String(100), nullable=False)  # e.g. "0 2 * * *"
+    profile: Mapped[str] = mapped_column(String(32), nullable=False, default="passive")
+    max_destructive_level: Mapped[str] = mapped_column(String(4), nullable=False, default="L2")
+    allow_destructive: Mapped[bool] = mapped_column(default=False, nullable=False)
+    gate_mode: Mapped[str] = mapped_column(String(32), nullable=False, default="non_interactive")
+    enabled: Mapped[bool] = mapped_column(default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(default=_now, nullable=False)
+    last_run_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    next_run_at: Mapped[datetime | None] = mapped_column(nullable=True)
+
+    target: Mapped[Target] = relationship("Target")

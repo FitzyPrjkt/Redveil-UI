@@ -32,6 +32,14 @@ export async function apiPatch<T>(path: string, body?: unknown): Promise<T> {
   return res.json();
 }
 
+export async function apiDelete<T>(path: string): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`API ${res.status}: ${res.statusText}`);
+  // 204 has no body
+  if (res.status === 204) return undefined as T;
+  return res.json();
+}
+
 export function sseUrl(scanId: number | string): string {
   return `${API_BASE}/api/scans/${scanId}/stream`;
 }

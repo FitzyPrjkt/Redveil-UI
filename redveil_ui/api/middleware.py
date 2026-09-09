@@ -302,22 +302,31 @@ import re as _re  # noqa: E402
 import secrets as _secrets  # noqa: E402
 
 _SCRIPT_SRC_RE = _re.compile(r"(<script\b(?![^>]*\bsrc=)[^>]*?)(/?>)")
+_STYLE_SRC_RE = _re.compile(r"(<style\b[^>]*?)(/?>)")
 
 
 def _csp_policy(nonce: str) -> str:
-    """CSP with a per-response nonce for the SPA's inline scripts.
+    """CSP with per-response nonce for inline scripts + styles (0.3.0 tightened).
 
-    Next.js static export emits inline flight-payload <script> tags that
-    carry the hydration data; blocking them kills hydration on every
-    dynamic route (React #412, blank pages). Instead of 'unsafe-inline',
-    the middleware injects this nonce into those tags and names it here.
-    'unsafe-inline' stays for style-src (styled-jsx emits <style> tags
-    with no reliable hook — nonce tightening for styles remains 0.3.0).
+    Next.js static export emits inline <script> flight payloads and
+    <style> styled-jsx tags. Both are now nonced so 'unsafe-inline' is gone.
     """
+    if nonce:
+        return (
+            "default-src 'self'; "
+            f"script-src 'self' 'nonce-{nonce}'; "
+            f"style-src 'self' 'nonce-{nonce}'; "
+            "img-src 'self' data:; "
+            "connect-src 'self'; "
+            "object-src 'none'; "
+            "base-uri 'self'; "
+            "frame-ancestors 'none'; "
+            "form-action 'self'"
+        )
     return (
         "default-src 'self'; "
-        f"script-src 'self' 'nonce-{nonce}'; "
-        "style-src 'self' 'unsafe-inline'; "  # Next.js styled-jsx (tightening: 0.3.0)
+        "script-src 'self'; "
+        "style-src 'self'; "
         "img-src 'self' data:; "
         "connect-src 'self'; "
         "object-src 'none'; "
@@ -356,11 +365,11 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             nonce = _secrets.token_urlsafe(24)
             body = await _drain_html(response)
             if body is not None:
-                injected = _SCRIPT_SRC_RE.sub(
-                    lambda m: f'{m.group(1)} nonce="{nonce}"{m.group(2)}',
-                    body.decode("utf-8", "replace"),
-                )
-                new_body = injected.encode("utf-8")
+                html = body.decode("utf-8", "replace")
+                # Inject nonce into both <script> and <style> inline tags
+                html = _SCRIPT_SRC_RE.sub(lambda m: f'{m.group(1)} nonce="{nonce}"{m.group(2)}', html)
+                html = _STYLE_SRC_RE.sub(lambda m: f'{m.group(1)} nonce="{nonce}"{m.group(2)}', html)
+                new_body = html.encode("utf-8")
                 response.headers["content-length"] = str(len(new_body))
 
                 async def _stream():

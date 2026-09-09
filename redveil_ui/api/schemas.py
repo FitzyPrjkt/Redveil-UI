@@ -206,6 +206,41 @@ class ScanStatus(BaseModel):
     error: str | None
 
 
+class ScheduledScanCreate(BaseModel):
+    target_id: int
+    cron: str = Field(..., max_length=100, description='Cron "min hour day month weekday" e.g. "0 2 * * *"')
+    profile: str = Field(default="passive", pattern=r"^(passive|low_impact|active)$")
+    max_destructive_level: str = Field(default="L2", pattern=r"^L[1-6]$")
+    allow_destructive: bool = False
+    gate_mode: str = Field(default="non_interactive", pattern=r"^(interactive|non_interactive|strict)$")
+    enabled: bool = True
+
+    @field_validator("cron", mode="before")
+    @classmethod
+    def _validate_cron(cls, v: Any) -> str:
+        from croniter import croniter
+
+        if not isinstance(v, str) or not croniter.is_valid(v):
+            raise ValueError(f"Invalid cron expression: {v!r} (expected 'm h dom mon dow' e.g. '0 2 * * *')")
+        return v
+
+
+class ScheduledScanOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    target_id: int
+    cron: str
+    profile: str
+    max_destructive_level: str
+    allow_destructive: bool
+    gate_mode: str
+    enabled: bool
+    created_at: datetime
+    last_run_at: datetime | None
+    next_run_at: datetime | None
+
+
 # --- Findings --------------------------------------------------------------
 
 

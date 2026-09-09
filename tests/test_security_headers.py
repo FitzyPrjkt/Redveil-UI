@@ -16,7 +16,9 @@ def test_csp_header_present_on_every_response(client):
     csp = response.headers.get("content-security-policy", "")
     assert "default-src 'self'" in csp
     assert "script-src 'self'" in csp
-    assert "style-src 'self' 'unsafe-inline'" in csp  # Next.js styled-jsx
+    # 0.3.0 tightened: style-src no longer 'unsafe-inline', nonce for HTML, 'self' for API
+    assert "style-src 'self'" in csp
+    assert "unsafe-inline" not in csp
     assert "img-src 'self' data:" in csp
     assert "object-src 'none'" in csp
     assert "frame-ancestors 'none'" in csp

@@ -33,6 +33,7 @@ from redveil_ui.api.routes import (
     probes,
     replay,
     scans,
+    schedules,
     scope,
     targets,
 )
@@ -109,9 +110,24 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         output_base_dir=output_dir,
     )
     log.info("Scanner ready (output_dir=%s)", output_dir)
+
+    # Scheduler (0.3.0): load cron schedules
+    try:
+        from redveil_ui.api.scheduler import load_schedules
+
+        await load_schedules()
+    except Exception as e:  # noqa: BLE001
+        log.warning("Scheduler failed to start: %s", e)
+
     try:
         yield
     finally:
+        try:
+            from redveil_ui.api.scheduler import stop_scheduler
+
+            stop_scheduler()
+        except Exception:
+            pass
         await engine.dispose()
 
 
@@ -228,3 +244,4 @@ app.include_router(entropy.router, prefix="/api/entropy", tags=["entropy"])
 app.include_router(replay.router, prefix="/api/findings", tags=["replay"])
 app.include_router(probes.router, prefix="/api/probes", tags=["probes"])
 app.include_router(audit.router, prefix="/api/audit", tags=["audit"])
+app.include_router(schedules.router, prefix="/api/schedules", tags=["schedules"])
