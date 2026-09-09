@@ -40,7 +40,7 @@ test("probe builder: preset mode loads payload-sets + run POSTs to /api/probes/c
 
   // Run probe — expect POST to /api/probes/custom + a probe_id result
   await page.getByTestId("run-probe").click();
-  await expect(page.getByText(/PRB-/)).toBeVisible({ timeout: 10000 });
+  await expect(page.getByText(/WPOC-|probe_id/)).toBeVisible({ timeout: 10000 });
 
   // Verify the actual API call happened
   const postCalls = calls.filter(

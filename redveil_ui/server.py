@@ -113,12 +113,35 @@ def _resolve_spa_path(path: str) -> str | None:
     return None
 
 
-def _load_config(config_path: str | None) -> dict:
-    """Load config from REDVEIL_CONFIG env or default ~/.redveil-ui/config.yaml."""
-    path = Path(
+def _resolve_config_path(config_path: str | None) -> Path:
+    """Resolve the config file path without loading it."""
+    return Path(
         config_path
         or os.environ.get("REDVEIL_CONFIG", Path.home() / ".redveil-ui" / "config.yaml")
-    )
+    ).expanduser()
+
+
+def _find_free_port(host: str, preferred: int) -> int:
+    """Walk forward from preferred until free on host (like first_run.find_free_port)."""
+    import socket
+
+    port = preferred
+    # For 0.0.0.0 we probe 0.0.0.0; for 127.0.0.1 probe that; fallback to 127.0.0.1 if host is ::1 etc.
+    probe_host = host if host in {"127.0.0.1", "0.0.0.0", "::1"} else "127.0.0.1"
+    while port < 65535:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                s.bind((probe_host, port))
+                return port
+            except OSError:
+                port += 1
+    raise RuntimeError("No free port in 1..65534")
+
+
+def _load_config(config_path: str | None) -> dict:
+    """Load config from REDVEIL_CONFIG env or default ~/.redveil-ui/config.yaml."""
+    path = _resolve_config_path(config_path)
     if not path.exists():
         raise SystemExit(
             f"Config not found at {path}. Run 'redveil-ui init' first."
@@ -199,11 +222,48 @@ def run_server(config_path: str | None = None):
             WEB_DIR,
         )
 
+    # === Step C: pick a free port if configured one is busy (start-time fallback) ===
+    # init already walked forward, but the port may have been taken between
+    # init and start. Walk again so `redveil-ui start` never fails with
+    # "Address already in use" — it just picks the next free port and
+    # persists it back to the config file so the operator's next start
+    # doesn't retry the same busy port.
+    preferred_port = int(config["port"])
+    host = str(config["host"])
+    chosen_port = _find_free_port(host, preferred_port)
+    if chosen_port != preferred_port:
+        import yaml as _yaml
+
+        cfg_path = _resolve_config_path(config_path)
+        config["port"] = chosen_port
+        try:
+            cfg_path.write_text(_yaml.safe_dump(config))
+        except OSError:
+            pass  # best-effort persist; start still proceeds on chosen_port
+        # Use rich if available, else plain print
+        try:
+            from rich.console import Console as _Console
+
+            _Console().print(
+                f"[yellow]Port {preferred_port} in use, using {chosen_port}.[/yellow]"
+            )
+        except Exception:
+            print(f"Port {preferred_port} in use, using {chosen_port}.")
+
+    # Friendly link output (always, even when port didn't change)
+    try:
+        from rich.console import Console as _Console2
+
+        _Console2().print(f"\n[bold green]Here's the link:[/bold green] http://{host}:{chosen_port}/")
+        _Console2().print(f"[dim]API: http://{host}:{chosen_port}/api/info  •  Health: http://{host}:{chosen_port}/healthz[/dim]\n")
+    except Exception:
+        print(f"\nHere's the link: http://{host}:{chosen_port}/")
+
     # Start uvicorn
     uvicorn.run(
         app,
-        host=config["host"],
-        port=int(config["port"]),
+        host=host,
+        port=chosen_port,
         log_level="info",
     )
 
