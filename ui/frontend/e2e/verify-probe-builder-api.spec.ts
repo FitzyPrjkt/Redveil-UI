@@ -5,7 +5,7 @@ POST /api/probes/custom endpoint is hit + a probe_id is returned.
 */
 import { test, expect, type Page } from "@playwright/test";
 
-const BASE = "http://127.0.0.1:3001";
+const BASE = process.env.REDVEIL_TEST_BASE ?? "";
 const DWYOR = "I ACKNOWLEDGE DWYOR";
 
 async function captureApi(page: Page) {

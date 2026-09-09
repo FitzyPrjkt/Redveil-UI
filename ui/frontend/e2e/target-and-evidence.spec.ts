@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 
 test("target page renders 3 tabs with site map, scope, issue defs", async ({ page }) => {
-  await page.goto("http://127.0.0.1:3001/targets/1");
+  await page.goto("/targets/1");
   await expect(page.getByRole("heading", { name: "Target" })).toBeVisible();
 
   // Tabs are present
@@ -40,7 +40,7 @@ test("target page renders 3 tabs with site map, scope, issue defs", async ({ pag
 });
 
 test("evidence log page renders chronological list with filters", async ({ page }) => {
-  await page.goto("http://127.0.0.1:3001/scans/1/evidence");
+  await page.goto("/scans/1/evidence");
   await expect(page.getByRole("heading", { name: "Evidence log" })).toBeVisible();
 
   // Wait for at least one evidence row to appear

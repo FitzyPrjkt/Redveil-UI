@@ -33,7 +33,7 @@ function record(page: Page) {
 
 test("SETTINGS — Refresh button calls /api/config", async ({ page }) => {
   record(page)("settings");
-  await page.goto("http://127.0.0.1:3001/settings");
+  await page.goto("/settings");
   await expect(page.getByTestId("settings-refresh")).toBeVisible({ timeout: 10000 });
   await page.waitForTimeout(500);
 
@@ -47,7 +47,7 @@ test("SETTINGS — Refresh button calls /api/config", async ({ page }) => {
 
 test("DECODER — buttons are pure client-side (no API)", async ({ page }) => {
   record(page)("decoder");
-  await page.goto("http://127.0.0.1:3001/decoder");
+  await page.goto("/decoder");
   await expect(page.getByRole("heading", { name: "Decoder" })).toBeVisible({
     timeout: 10000,
   });
@@ -62,7 +62,7 @@ test("DECODER — buttons are pure client-side (no API)", async ({ page }) => {
 
 test("TOKEN ENTROPY — Analyze button calls /api/entropy/analyze", async ({ page }) => {
   record(page)("token-entropy");
-  await page.goto("http://127.0.0.1:3001/tools/token-entropy");
+  await page.goto("/tools/token-entropy");
   await expect(page.getByRole("heading", { name: /Token Entropy/i })).toBeVisible({
     timeout: 10000,
   });
@@ -83,7 +83,7 @@ test("TOKEN ENTROPY — Analyze button calls /api/entropy/analyze", async ({ pag
 
 test("COMPARER — Scan input loads evidence via /api/scans/{id}/evidence", async ({ page }) => {
   record(page)("comparer");
-  await page.goto("http://127.0.0.1:3001/comparer");
+  await page.goto("/comparer");
   await expect(page.getByRole("heading", { name: "Comparer" })).toBeVisible({
     timeout: 10000,
   });
@@ -104,7 +104,7 @@ test("EVIDENCE LOG — loads /api/scans/{id}/evidence on mount", async ({ page }
     test.skip(true, "no scans in DB — seed data missing");
     return;
   }
-  await page.goto(`http://127.0.0.1:3001/scans/${scans[0].id}/evidence`);
+  await page.goto(`/scans/${scans[0].id}/evidence`);
   await page.waitForTimeout(1500);
   const apiCalls = callsByPage.get("evidence-log") ?? [];
   const evidenceCall = apiCalls.find((c) =>
@@ -124,7 +124,7 @@ test("TARGET / Site Map — loads target + sitemap on mount", async ({ page }) =
     test.skip(true, "no targets in DB");
     return;
   }
-  await page.goto(`http://127.0.0.1:3001/targets/${targets[0].id}`);
+  await page.goto(`/targets/${targets[0].id}`);
   await expect(page.getByRole("heading", { name: /Target/i })).toBeVisible({
     timeout: 10000,
   });
@@ -145,7 +145,7 @@ test("REPLAY — Run button calls POST /api/findings/{wpoc_id}/replay", async ({
     return;
   }
   const wpoc = findings[0].wpoc_id;
-  await page.goto(`http://127.0.0.1:3001/findings/${wpoc}/replay`);
+  await page.goto(`/findings/${wpoc}/replay`);
   await page.waitForLoadState("networkidle");
   await page.waitForTimeout(500);
   // Click Run / Replay button

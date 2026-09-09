@@ -5,7 +5,7 @@
 import { test, expect } from "@playwright/test";
 
 test("settings page renders", async ({ page }) => {
-  await page.goto("http://127.0.0.1:3001/settings");
+  await page.goto("/settings");
   await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible({
     timeout: 10000,
   });
@@ -25,7 +25,7 @@ test("settings page renders", async ({ page }) => {
 });
 
 test("decoder page renders", async ({ page }) => {
-  await page.goto("http://127.0.0.1:3001/decoder");
+  await page.goto("/decoder");
   await expect(page.getByRole("heading", { name: "Decoder" })).toBeVisible({
     timeout: 10000,
   });
@@ -38,7 +38,7 @@ test("decoder page renders", async ({ page }) => {
 });
 
 test("comparer page renders", async ({ page }) => {
-  await page.goto("http://127.0.0.1:3001/comparer");
+  await page.goto("/comparer");
   await expect(page.getByRole("heading", { name: "Comparer" })).toBeVisible({
     timeout: 10000,
   });
@@ -50,7 +50,7 @@ test("comparer page renders", async ({ page }) => {
 });
 
 test("token-entropy page renders", async ({ page }) => {
-  await page.goto("http://127.0.0.1:3001/tools/token-entropy");
+  await page.goto("/tools/token-entropy");
   await expect(
     page.getByRole("heading", { name: /Token Entropy/i }),
   ).toBeVisible({ timeout: 10000 });
@@ -70,7 +70,7 @@ test("finding detail renders", async ({ page }) => {
     return;
   }
   const wpoc = findings[0].wpoc_id;
-  await page.goto(`http://127.0.0.1:3001/findings/${wpoc}`);
+  await page.goto(`/findings/${wpoc}`);
   // Wait for the title to render (data loaded) OR the not-found alert
   await page.waitForLoadState("networkidle");
   await page.waitForTimeout(800);
@@ -89,7 +89,7 @@ test("replay page renders", async ({ page }) => {
     return;
   }
   const wpoc = findings[0].wpoc_id;
-  await page.goto(`http://127.0.0.1:3001/findings/${wpoc}/replay`);
+  await page.goto(`/findings/${wpoc}/replay`);
   await page.waitForLoadState("networkidle");
   await page.waitForTimeout(800);
   await page.screenshot({

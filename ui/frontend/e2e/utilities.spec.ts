@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 
 test("decoder page renders and decodes Base64", async ({ page }) => {
-  await page.goto("http://127.0.0.1:3001/decoder");
+  await page.goto("/decoder");
   await expect(page.getByRole("heading", { name: "Decoder" })).toBeVisible();
   await expect(page.getByTestId("decoder-input")).toBeVisible();
   await expect(page.getByTestId("decoder-output")).toBeVisible();
@@ -19,7 +19,7 @@ test("decoder page renders and decodes Base64", async ({ page }) => {
 test("comparer page renders diff between two evidence records", async ({
   page,
 }) => {
-  await page.goto("http://127.0.0.1:3001/comparer?scan_id=1");
+  await page.goto("/comparer?scan_id=1");
   await expect(page.getByRole("heading", { name: "Comparer" })).toBeVisible();
   await expect(page.getByTestId("comparer-left-select")).toBeVisible();
   await expect(page.getByTestId("comparer-right-select")).toBeVisible();
@@ -34,7 +34,7 @@ test("comparer page renders diff between two evidence records", async ({
 });
 
 test("token entropy page analyzes a token", async ({ page }) => {
-  await page.goto("http://127.0.0.1:3001/tools/token-entropy");
+  await page.goto("/tools/token-entropy");
   await expect(page.getByRole("heading", { name: "Token entropy" })).toBeVisible();
   await expect(page.getByTestId("entropy-input")).toBeVisible();
 

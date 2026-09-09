@@ -1,7 +1,7 @@
 /* Verify Scan History + Scan Detail pages render and call backend. */
 import { test, expect, type Page } from "@playwright/test";
 
-const BASE = "http://127.0.0.1:3001";
+const BASE = process.env.REDVEIL_TEST_BASE ?? "";
 
 test("SCAN HISTORY — list page renders, fetches /api/scans + /api/targets", async ({
   page,

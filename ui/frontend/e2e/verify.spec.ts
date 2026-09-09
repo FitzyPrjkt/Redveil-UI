@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 
 test("dashboard renders", async ({ page }) => {
-  await page.goto("http://127.0.0.1:3001");
+  await page.goto("");
   await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
 
   // Take a screenshot for visual verification
@@ -31,14 +31,25 @@ test("dashboard renders", async ({ page }) => {
   await expect(
     page.getByTestId("activity-row").first(),
   ).toBeVisible({ timeout: 10000 });
-  // The seeded DB has a staging-app target; the real data must show it.
-  // Many scans hit the same target so use .first() to avoid
-  // strict-mode violation.
-  await expect(page.getByText("staging.example.com").first()).toBeVisible();
+  // The URL shown must be the actual seeded target from the API, not a
+  // hardcoded string — the suite runs against whatever DB the operator
+  // serves (REDVEIL_TEST_BASE), so read the expectation from /api.
+  const activityScans = await page.request.get("/api/scans");
+  expect(activityScans.ok()).toBe(true);
+  const scans = await activityScans.json();
+  expect(scans.length, "at least one seeded scan").toBeGreaterThan(0);
+  const targets = await (await page.request.get("/api/targets")).json();
+  const seededUrl = targets.find(
+    (t: { id: number }) => t.id === scans[0].target_id,
+  )?.url;
+  expect(seededUrl, "seeded target resolvable").toBeTruthy();
+  await expect(
+    page.getByText(seededUrl, { exact: false }).first(),
+  ).toBeVisible();
 });
 
 test("plugins page renders with checks", async ({ page }) => {
-  await page.goto("http://127.0.0.1:3001/plugins");
+  await page.goto("/plugins");
   await expect(page.getByRole("heading", { name: "Plugins" })).toBeVisible();
 
   // Wait for at least one check card to render
@@ -86,7 +97,7 @@ test("plugins page renders with checks", async ({ page }) => {
 });
 
 test("new scan form renders all destructive-level fields", async ({ page }) => {
-  await page.goto("http://127.0.0.1:3001/targets/new");
+  await page.goto("/targets/new");
   await expect(page.getByRole("heading", { name: "New Scan" })).toBeVisible();
 
   // URL field is required and present

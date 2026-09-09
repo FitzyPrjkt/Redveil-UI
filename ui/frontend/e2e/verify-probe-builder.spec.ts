@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 
 test("probe builder: page renders with mode toggle", async ({ page }) => {
-  await page.goto("http://127.0.0.1:3001/probe-builder");
+  await page.goto("/probe-builder");
   await expect(page.getByRole("heading", { name: "Probe Builder" })).toBeVisible({
     timeout: 10000,
   });
@@ -22,7 +22,7 @@ test("probe builder: page renders with mode toggle", async ({ page }) => {
 });
 
 test("probe builder: switch to custom mode shows textarea", async ({ page }) => {
-  await page.goto("http://127.0.0.1:3001/probe-builder");
+  await page.goto("/probe-builder");
   await page.getByTestId("mode-custom").click();
   await expect(page.getByTestId("custom-payloads-input")).toBeVisible({ timeout: 5000 });
   // No payload yet → Continue disabled
@@ -50,7 +50,7 @@ test("probe builder: switch to custom mode shows textarea", async ({ page }) => 
 });
 
 test("probe builder: wrong DWYOR phrase does not unlock", async ({ page }) => {
-  await page.goto("http://127.0.0.1:3001/probe-builder");
+  await page.goto("/probe-builder");
   await page.getByTestId("mode-custom").click();
   await page.getByTestId("custom-payloads-input").fill("payload-x");
   await page.getByTestId("open-gate1").click();
