@@ -5,13 +5,26 @@ Login accepts the raw API key via JSON body OR the X-API-Key header
 HttpOnly + SameSite=Strict + Path=/ + Max-Age=SESSION_TTL, with the
 Secure flag set iff the effective scheme is HTTPS (request scheme or
 X-Forwarded-Proto: https).
+
+Key validation covers both storage modes (S2 review fix):
+- raw key resolvable (env / .api_key file) → direct constant-time
+  comparison;
+- hash-only install (auth.api_key_hash in config.yaml) → supplied key
+  is sha256'd and compared against the stored digest in constant time.
 """
+import hmac
+
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Optional
 
-from redveil_ui.api.auth import _resolve_api_key, issue_session_cookie
+from redveil_ui.api.auth import (
+    _has_config_hash,
+    _key_matches_config_hash,
+    _resolve_api_key,
+    issue_session_cookie,
+)
 from redveil_ui.api.middleware import limiter
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -35,16 +48,27 @@ def _effective_scheme(request: Request) -> str:
 @limiter.limit(LOGIN_RATE_LIMIT)
 def login(request: Request, body: LoginIn | None = None):
     expected = _resolve_api_key()
-    if expected is None:
-        raise HTTPException(status_code=401, detail="Invalid API key")
-
     supplied = body.api_key if (body is not None and body.api_key) else None
     if not supplied:
         supplied = request.headers.get("x-api-key")
-    if not supplied or supplied != expected:
+
+    if expected is not None:
+        # Raw key resolvable (env var or .api_key file): compare directly.
+        if not supplied or not hmac.compare_digest(supplied, expected):
+            raise HTTPException(status_code=401, detail="Invalid API key")
+        api_key = expected
+    elif _has_config_hash():
+        # Hash-only install (auth.api_key_hash in config.yaml): no raw
+        # key lives on the server, so validate the supplied key against
+        # the stored sha256 in constant time (S2 review fix — the hash
+        # previously failed closed at startup but could never log in).
+        if not supplied or not _key_matches_config_hash(supplied):
+            raise HTTPException(status_code=401, detail="Invalid API key")
+        api_key = supplied
+    else:
         raise HTTPException(status_code=401, detail="Invalid API key")
 
-    cookie_value, max_age = issue_session_cookie(expected)
+    cookie_value, max_age = issue_session_cookie(api_key)
     secure = _effective_scheme(request) == "https"
     response = JSONResponse({"status": "authenticated"})
     response.set_cookie(

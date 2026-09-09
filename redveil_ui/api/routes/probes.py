@@ -40,7 +40,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import yaml
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -395,6 +395,7 @@ async def list_payload_sets() -> list[dict]:
 @router.post("/custom", response_model=ProbeRunOut)
 async def run_custom_probe(
     body: ProbeRunIn,
+    request: Request,
     session: AsyncSession = Depends(get_session),
 ) -> ProbeRunOut:
     """Execute a probe session.
@@ -403,6 +404,19 @@ async def run_custom_probe(
     endpoint refuses any request where ``confirmed_dwyor`` is not
     strictly True — there is no fallback, no default, no override.
     """
+    # ---- 0. Auth gate (0.2.0 review S3, spec §6.5) ---------------------
+    # This route is ALWAYS destructive: an operator-crafted payload list
+    # fired at a live target. The DWYOR flag is an operator safety
+    # acknowledgment, not an authentication substitute — an
+    # unauthenticated LAN request gets 401 before anything else runs.
+    # Loopback is unaffected: AuthMiddleware short-circuits
+    # is_authenticated=True there.
+    if not getattr(request.state, "is_authenticated", False):
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication required for custom probes on LAN",
+        )
+
     # ---- 1. DWYOR gate (server-side) ----------------------------------
     if not body.confirmed_dwyor:
         # 403, not 400: this is an authorization failure, not a

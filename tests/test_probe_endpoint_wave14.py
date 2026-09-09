@@ -20,14 +20,21 @@ import pytest
 
 @pytest.fixture
 def client():
-    """Use FastAPI's TestClient against the live app."""
+    """Use FastAPI's TestClient against the live app.
+
+    Direct ASGI peer is loopback (127.0.0.1): POST /api/probes/custom is
+    always destructive and therefore auth-gated on LAN (0.2.0 review
+    S3). These tests exercise the probe pipeline, not the gate — the
+    gate itself is covered in test_route_gates.py.
+
+    Use `with` so the lifespan runs — it creates the DB schema on startup.
+    Without context-manager entry, lifespan tables are not created.
+    """
     from fastapi.testclient import TestClient
 
     from redveil_ui.api.main import app
 
-    # Use `with` so the lifespan runs — it creates the DB schema on startup.
-    # Without context-manager entry, lifespan tables are not created.
-    with TestClient(app) as c:
+    with TestClient(app, client=("127.0.0.1", 50000)) as c:
         yield c
 
 

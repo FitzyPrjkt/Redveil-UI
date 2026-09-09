@@ -44,10 +44,52 @@ class AuthConfigError(Exception):
 
 
 import hashlib  # noqa: E402
+import hmac  # noqa: E402
 import os  # noqa: E402
 from pathlib import Path  # noqa: E402
 
 LOOPBACK_BINDS = frozenset({"127.0.0.1", "::1", "localhost"})
+
+
+def _config_path() -> Path:
+    """Locate config.yaml.
+
+    Single source of truth for every config lookup in the API package:
+    $REDVEIL_CONFIG when set, else ~/.redveil-ui/config.yaml. This
+    matches redveil_ui/server.py and api/routes/config.py — the
+    fail-closed check, the middleware's hash validation and the
+    config-reset endpoint must all agree on WHICH config is live.
+    """
+    return Path(
+        os.environ.get("REDVEIL_CONFIG")
+        or Path.home() / ".redveil-ui" / "config.yaml"
+    )
+
+
+def _load_auth_hash() -> str | None:
+    """Read auth.api_key_hash from config.yaml, or None.
+
+    Tolerates (and strips) the legacy "sha256:" prefix written by
+    `redveil-ui init` / `auth rotate-key`.
+    """
+    config_path = _config_path()
+    if not config_path.is_file():
+        return None
+    try:
+        import yaml
+
+        with open(config_path) as f:
+            cfg = yaml.safe_load(f) or {}
+        stored = cfg.get("auth", {}).get("api_key_hash")
+        if not stored:
+            return None
+        stored = str(stored).strip()
+        if stored.lower().startswith("sha256:"):
+            stored = stored[len("sha256:"):]
+        return stored or None
+    except Exception:  # noqa: BLE001 — corrupt config must never 500 the auth path
+        return None
+
 
 def _resolve_api_key() -> str | None:
     """Resolve the API key from one of three storage locations.
@@ -55,11 +97,10 @@ def _resolve_api_key() -> str | None:
     Precedence (first match wins):
       1. REDVEIL_UI_API_KEY env var
       2. ~/.redveil-ui/.api_key file (mode 0600)
-      3. auth.api_key_hash in config (returns None; the hash is
-         used to VALIDATE a key, not to PRODUCE one. The
-         check_auth_or_fail function only needs to know if a key
-         is configured, not what it is. The full validation path
-         runs at request time in Phase 3 middleware.)
+      3. None — auth.api_key_hash in config cannot PRODUCE a key,
+         only VALIDATE one (see _key_matches_config_hash). The
+         request-time middleware and login route use that validator
+         so hash-only installs still authenticate.
     """
     env_key = os.environ.get("REDVEIL_UI_API_KEY")
     if env_key:
@@ -72,21 +113,30 @@ def _resolve_api_key() -> str | None:
         except OSError:
             pass
 
-    # Config-file hash is checked separately in _has_config_hash()
+    # Config-file hash is validated at request time via
+    # _key_matches_config_hash()
     return None
 
 def _has_config_hash() -> bool:
     """Check if auth.api_key_hash is set in the config file."""
-    config_path = Path.home() / ".redveil-ui" / "config.yaml"
-    if not config_path.is_file():
+    return _load_auth_hash() is not None
+
+
+def _key_matches_config_hash(supplied: str) -> bool:
+    """Validate a raw key against the stored auth.api_key_hash.
+
+    Constant-time comparison of sha256(supplied) against the stored
+    hex digest. Used by the login route and the middleware's header
+    branch so a hash-only install (REDVEIL_UI_API_KEY unset, no
+    .api_key file, only the config hash) can still authenticate.
+    """
+    if not supplied:
         return False
-    try:
-        import yaml
-        with open(config_path) as f:
-            cfg = yaml.safe_load(f)
-        return bool(cfg.get("auth", {}).get("api_key_hash"))
-    except (OSError, ImportError):
+    stored = _load_auth_hash()
+    if not stored:
         return False
+    supplied_hex = hashlib.sha256(supplied.encode()).hexdigest()
+    return hmac.compare_digest(supplied_hex, stored)
 
 def check_auth_or_fail(bind: str) -> None:
     """Hard fail-closed check at server startup.
@@ -108,7 +158,6 @@ def check_auth_or_fail(bind: str) -> None:
     raise AuthConfigError(bind=bind)
 
 
-import hmac  # noqa: E402
 import time  # noqa: E402
 
 SESSION_TTL_SECONDS = int(os.environ.get("REDVEIL_UI_SESSION_TTL", 86400))  # 24h

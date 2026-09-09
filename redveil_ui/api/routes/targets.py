@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -94,7 +94,21 @@ async def update_target(
 
 
 @router.delete("/{target_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_target(target_id: int, session: AsyncSession = Depends(get_session)) -> None:
+async def delete_target(
+    target_id: int,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    # Auth gate (0.2.0 review S3, spec §6.5): deleting a target is
+    # destructive regardless of the request (cascade-drops its scans
+    # and findings), so it always requires authentication on LAN.
+    # Loopback is unaffected — AuthMiddleware short-circuits
+    # is_authenticated=True there.
+    if not getattr(request.state, "is_authenticated", False):
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication required for target deletion on LAN",
+        )
     target = await session.get(Target, target_id)
     if target is None:
         raise HTTPException(status_code=404, detail="target not found")
