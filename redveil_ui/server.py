@@ -251,15 +251,47 @@ def run_server(config_path: str | None = None):
             print(f"Port {preferred_port} in use, using {chosen_port}.")
 
     # Friendly link output (always, even when port didn't change)
+    tls_cfg = config.get("tls", {})
+    tls_enabled = bool(tls_cfg.get("enabled"))
+    scheme = "https" if tls_enabled else "http"
     try:
         from rich.console import Console as _Console2
 
-        _Console2().print(f"\n[bold green]Here's the link:[/bold green] http://{host}:{chosen_port}/")
-        _Console2().print(f"[dim]API: http://{host}:{chosen_port}/api/info  •  Health: http://{host}:{chosen_port}/healthz[/dim]\n")
+        _Console2().print(f"\n[bold green]Here's the link:[/bold green] {scheme}://{host}:{chosen_port}/")
+        _Console2().print(f"[dim]API: {scheme}://{host}:{chosen_port}/api/info  •  Health: {scheme}://{host}:{chosen_port}/healthz[/dim]\n")
+        if tls_enabled:
+            _Console2().print("[dim]TLS: Local CA — run `redveil-ui tls install-ca` on clients to remove browser warning[/dim]\n")
     except Exception:
-        print(f"\nHere's the link: http://{host}:{chosen_port}/")
+        print(f"\nHere's the link: {scheme}://{host}:{chosen_port}/")
 
-    # Start uvicorn
+    # Start uvicorn — TLS if enabled
+    if tls_enabled:
+        certfile = tls_cfg.get("certfile")
+        keyfile = tls_cfg.get("keyfile")
+        # Auto-ensure certs exist (e.g. after manual config edit)
+        if not certfile or not keyfile or not Path(certfile).exists() or not Path(keyfile).exists():
+            try:
+                from redveil_ui.tls import ensure_tls_assets
+
+                _, certfile_p, keyfile_p = ensure_tls_assets()
+                certfile, keyfile = str(certfile_p), str(keyfile_p)
+            except SystemExit as e:
+                print(f"TLS enabled but cert generation failed: {e}")
+                print("Falling back to http. Fix with `redveil-ui init --tls --yes`")
+                tls_enabled = False
+            except Exception as e:  # noqa: BLE001
+                print(f"TLS cert error: {e}")
+                tls_enabled = False
+        if tls_enabled:
+            uvicorn.run(
+                app,
+                host=host,
+                port=chosen_port,
+                log_level="info",
+                ssl_certfile=certfile,
+                ssl_keyfile=keyfile,
+            )
+            return
     uvicorn.run(
         app,
         host=host,

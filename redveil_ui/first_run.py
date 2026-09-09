@@ -120,6 +120,7 @@ def run_init(
     config_path: str | None,
     bind: str | None = None,
     yes: bool = False,
+    enable_tls: bool = False,
 ):
     # 1. Resolve config location (FIXED, regardless of --data-dir).
     # The data_dir is stored INSIDE the config, not used to compute
@@ -199,6 +200,42 @@ def run_init(
             + hashlib.sha256(api_key.encode()).hexdigest(),
         }
 
+    # 5b. TLS Local CA (0.3.0): opt-in via --tls
+    if enable_tls:
+        try:
+            from redveil_ui.tls import ensure_tls_assets
+
+            # CA/certs always live in ~/.redveil-ui (not in custom --config dir) so
+            # `redveil-ui tls install-ca` finds them regardless of --config.
+            ca_pem, cert_pem, key_pem = ensure_tls_assets()
+            config["tls"] = {
+                "enabled": True,
+                "certfile": str(cert_pem),
+                "keyfile": str(key_pem),
+                "ca_pem": str(ca_pem),
+            }
+            console.print(f"  TLS CA:    {ca_pem} [green](Local CA generated)[/green]")
+            console.print(f"  TLS Cert:  {cert_pem}")
+            console.print(f"  TLS Key:   {key_pem}")
+            console.print(
+                "  [yellow]Next: run `redveil-ui tls install-ca` (needs sudo) to trust CA in browser/system[/yellow]"
+            )
+        except SystemExit as e:
+            console.print(f"[red]TLS setup failed: {e}[/red]")
+            config["tls"] = {"enabled": False}
+        except Exception as e:  # noqa: BLE001
+            console.print(f"[red]TLS setup failed: {e}[/red]")
+            config["tls"] = {"enabled": False}
+    else:
+        # Preserve existing TLS config if re-running init without --tls
+        if cfg_path.is_file():
+            try:
+                existing = yaml.safe_load(cfg_path.read_text()) or {}
+                if "tls" in existing:
+                    config["tls"] = existing["tls"]
+            except Exception:
+                pass
+
     cfg_path.write_text(yaml.safe_dump(config))
     if api_key is not None:
         console.print(
@@ -217,11 +254,13 @@ def run_init(
     asyncio.run(_init_schema())
 
     # 7. Print summary
+    # TLS URL scheme
+    _scheme = "https" if config.get("tls", {}).get("enabled") else "http"
     console.print("\n[bold green]redveil-ui initialized[/bold green]")
     console.print(f"  Config:    {cfg_path}")
     console.print(f"  Database:  {config['db_path']}  [green](schema created)[/green]")
     console.print(f"  Reports:   {config['reports_dir']}")
-    console.print(f"  URL:       http://{effective_bind}:{chosen_port}/")
+    console.print(f"  URL:       {_scheme}://{effective_bind}:{chosen_port}/")
     console.print(
         f"  Safety:    gate_mode={config['gate_mode']} "
         f"max_destructive_level={config['max_destructive_level']} "
