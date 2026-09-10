@@ -72,6 +72,7 @@ from redveil.plugins.base import (
     ValidationResult,
 )
 from redveil.util.urls import join_url
+from redveil.validation.oast import build_oast_provider
 
 # Parameter names that frequently carry URL values and are worth probing for
 # SSRF. Conservative list — these are common sink names seen in real-world
@@ -193,11 +194,12 @@ class SSRFCheck(Check):
     """Detects Server-Side Request Forgery via OOB callback injection.
 
     ACTIVE safety profile. Requires ``active_testing=True`` and a configured
-    ``out_of_band_callback_domain``. The check injects a unique-canary URL
-    into URL parameters and form fields; if the server fetches that URL,
-    the operator's OOB service will see a hit on the canary subdomain. The
-    check itself only observes the response — it does NOT verify that the
-    OOB service received the callback. Manual OOB log review is required.
+    ``out_of_band_callback_domain`` (or ``oast`` config). The check injects
+    a unique-canary URL into URL parameters and form fields; if the server
+    fetches that URL, the operator's OOB service will see a hit on the
+    canary subdomain. B3: if an ``OASTProvider`` is configured, validate()
+    auto-polls ``verify(token)`` to upgrade LIKELY → CONFIRMED without
+    manual log review. Failure isolation: OAST down → still LIKELY, scan tetap.
     """
 
     meta = CheckMeta(
@@ -226,17 +228,35 @@ class SSRFCheck(Check):
         if not active_testing:
             return []
 
-        # --- SAFETY GATE 2: an OOB callback domain must be configured.
+        # --- SAFETY GATE 2: an OOB callback domain OR OAST config must be present.
         oob_domain = getattr(auth, "out_of_band_callback_domain", None)
-        if not oob_domain:
+        oast_cfg = getattr(self.deps.config, "oast", None)
+        if not oob_domain and not oast_cfg:
             return []
+        # If oast present but domain missing, derive domain from oast base_url
+        if not oob_domain and oast_cfg:
+            try:
+                base = oast_cfg.get("base_url") if isinstance(oast_cfg, dict) else getattr(oast_cfg, "base_url", None)
+                if base:
+                    from urllib.parse import urlparse as _up
+                    oob_domain = _up(base).hostname or base.replace("https://","").replace("http://","").split("/")[0]
+                else:
+                    oob_domain = "oast.fun"
+            except Exception:
+                oob_domain = "oast.fun"
 
         # --- SAFETY GATE 3: the OOB domain must not be a hardcoded internal
         # target. This is a defense-in-depth check; if someone misconfigures
         # the OOB domain to an internal hostname we refuse to probe.
         for bad in _INTERNAL_HOST_PATTERNS:
-            if bad in oob_domain.lower():
+            if bad in (oob_domain or "").lower():
                 return []
+
+        # B3: build OAST provider (provider-agnostic, failure-isolated)
+        try:
+            self._oast_provider = build_oast_provider(self.deps.config)  # type: ignore[attr-defined]
+        except Exception:
+            self._oast_provider = None  # type: ignore[attr-defined]
 
         # Optional ActionGate: present the OOB probe plan to the user.
         # The gate only blocks MEDIUM+ in interactive mode. OOB SSRF probes
@@ -337,10 +357,20 @@ class SSRFCheck(Check):
                     seen_post.add(key)
                     post_targets.append((action, iname))
 
-        # 3. Probe every GET candidate with a fresh canary.
+        # 3. Probe every GET candidate with a fresh canary (B3: via OASTProvider if available).
         for endpoint, param, _orig_value in get_targets:
             canary = _generate_canary()
             oob_url = _build_oob_url(oob_domain, canary)
+            token = canary
+            provider = getattr(self, "_oast_provider", None)
+            if provider is not None:
+                try:
+                    reg = await provider.register()
+                    oob_url = reg.canary_url
+                    token = reg.token
+                    canary = token
+                except Exception:
+                    pass
             try:
                 probe_url = join_url(base, endpoint)
                 req = Request(
@@ -361,6 +391,7 @@ class SSRFCheck(Check):
                 "parameter": param,
                 "method": "GET",
                 "canary": canary,
+                "token": token,
                 "oob_url": oob_url,
                 "oob_domain": oob_domain,
                 "request": req,
@@ -368,10 +399,20 @@ class SSRFCheck(Check):
                 "indicator": indicator,
             })
 
-        # 4. Probe every POST candidate with a fresh canary.
+        # 4. Probe every POST candidate with a fresh canary (B3: via OASTProvider).
         for action, param in post_targets:
             canary = _generate_canary()
             oob_url = _build_oob_url(oob_domain, canary)
+            token = canary
+            provider = getattr(self, "_oast_provider", None)
+            if provider is not None:
+                try:
+                    reg = await provider.register()
+                    oob_url = reg.canary_url
+                    token = reg.token
+                    canary = token
+                except Exception:
+                    pass
             try:
                 probe_url = join_url(base, action)
                 # Build a minimal form body — the canary is the only sink
@@ -396,6 +437,7 @@ class SSRFCheck(Check):
                 "parameter": param,
                 "method": "POST",
                 "canary": canary,
+                "token": token,
                 "oob_url": oob_url,
                 "oob_domain": oob_domain,
                 "request": req,
@@ -407,18 +449,47 @@ class SSRFCheck(Check):
 
     async def validate(self, ctx, candidate) -> ValidationResult:
         indicator = candidate.get("indicator")
+        # B3: try auto OAST verify to upgrade LIKELY -> CONFIRMED (failure-isolated)
+        token = candidate.get("token") or candidate.get("canary")
+        if token:
+            provider = getattr(self, "_oast_provider", None)
+            if provider is None:
+                try:
+                    provider = build_oast_provider(self.deps.config if self.deps else None)
+                except Exception:
+                    provider = None
+            if provider is not None:
+                try:
+                    verified = await provider.verify(token)
+                    if not verified:
+                        # Small delay for OOB propagation (DNS/HTTP), bounded
+                        import asyncio
+                        await asyncio.sleep(1.0)
+                        verified = await provider.verify(token)
+                    if verified:
+                        return ValidationResult(
+                            outcome=ValidationOutcome.CONFIRMED,
+                            confidence="high",
+                            observation=(
+                                f"OAST callback verified for canary {token} on "
+                                f"{candidate.get('oob_domain')} — server fetched the URL (auto poll)"
+                            ),
+                        )
+                except Exception:
+                    pass  # isolation: fall through to LIKELY
         if indicator == "redirect":
             # 30x with Location matching the OOB URL is the strongest
             # signal we can collect without OOB log access. We can only
             # mark this LIKELY — a definite confirmation requires the
-            # operator to see the canary subdomain in their OOB logs.
+            # operator to see the canary subdomain in their OOB logs,
+            # unless OAST auto-verify above succeeded.
             return ValidationResult(
                 outcome=ValidationOutcome.LIKELY,
                 confidence="medium",
                 observation=(
                     "server returned a redirect whose Location matches the "
                     "injected OOB URL; manual OOB log review required to "
-                    "confirm the callback was received"
+                    "confirm the callback was received (OAST not verified)"
                 ),
             )
         if indicator == "body_reference":
@@ -428,7 +499,7 @@ class SSRFCheck(Check):
                 observation=(
                     "response body references the injected OOB URL; could "
                     "be reflected input rather than a real fetch — manual "
-                    "OOB log review required"
+                    "OOB log review required (OAST not verified)"
                 ),
             )
         if indicator == "successful_fetch":
@@ -437,7 +508,7 @@ class SSRFCheck(Check):
                 confidence="low",
                 observation=(
                     "response content references the injected canary; "
-                    "possible fetch — manual OOB log review required"
+                    "possible fetch — manual OOB log review required (OAST not verified)"
                 ),
             )
         return ValidationResult(

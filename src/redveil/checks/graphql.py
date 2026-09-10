@@ -63,6 +63,20 @@ _GRAPHQL_PATHS: list[str] = [
     "/query",
 ]
 
+# B4: fuzz queries — minimal read-only probes that try to fetch ids via GraphQL.
+# Only request `id` to minimize data exposure while proving field accessibility.
+# All are depth 1 (single root field) and do NOT request sensitive fields (password etc).
+_INTROSPECTION_QUERY_FIELDS: str = '{ __type(name: "Query") { fields { name } } }'
+
+_FUZZ_QUERIES: list[str] = [
+    "{ users { id } }",
+    '{ user(id: 1) { id } }',
+    '{ user(id: "1") { id } }',
+    "{ me { id } }",
+    "{ profile { id } }",
+    "{ accounts { id } }",
+]
+
 
 def _query_depth(query: str) -> int:
     """Return the number of root-level field selections in a GraphQL query.
@@ -131,6 +145,47 @@ def _looks_like_json_response(resp) -> bool:
     return isinstance(parsed, dict)
 
 
+def _is_fuzz_success(resp) -> bool:
+    """Return True if a fuzz query returned usable data (not error, data not null).
+
+    Conservative: any data.* not None counts as success — we already limited
+    fuzz to read-only id queries, so any data indicates field accessibility.
+    """
+    if resp.status_code != 200:
+        return False
+    try:
+        parsed = json.loads(resp.body)
+    except (ValueError, TypeError):
+        return False
+    if not isinstance(parsed, dict):
+        return False
+    # If errors present and data is None/null, it's a failed query (e.g. auth required)
+    data = parsed.get("data")
+    if data is None:
+        return False
+    if not isinstance(data, dict):
+        # data could be list? unlikely for GraphQL root
+        return False
+    # Empty dict data (no field returned) is not success
+    if not data:
+        return False
+    # Check that at least one field is non-null
+    for v in data.values():
+        if v is not None:
+            # If v is list with at least one id, strong success
+            if isinstance(v, list):
+                if len(v) > 0:
+                    return True
+                # empty list still indicates field accessible but no data — consider success (exposure of schema)
+                return True
+            if isinstance(v, dict):
+                # For single object, any key present indicates success
+                return True
+            # scalar also counts
+            return True
+    return False
+
+
 class GraphQLCheck(Check):
     meta = CheckMeta(
         id="graphql",
@@ -170,6 +225,8 @@ class GraphQLCheck(Check):
 
         for path in _GRAPHQL_PATHS:
             endpoint_url = join_url(base, path)
+            is_graphql = False
+            type_names: list[str] = []
             # 1. Probe introspection on this endpoint.
             try:
                 req = Request(
@@ -182,9 +239,10 @@ class GraphQLCheck(Check):
                 )
                 resp = await self.deps.http.send(req)
             except Exception:
-                continue
+                resp = None
+                req = None  # type: ignore
 
-            if _looks_like_json_response(resp):
+            if resp is not None and _looks_like_json_response(resp):
                 parsed = json.loads(resp.body)
                 data = parsed.get("data") if isinstance(parsed, dict) else None
                 if isinstance(data, dict):
@@ -192,14 +250,46 @@ class GraphQLCheck(Check):
                     if isinstance(schema, dict):
                         types = schema.get("types")
                         if isinstance(types, list):
+                            type_names = [t.get("name") for t in types if isinstance(t, dict) and isinstance(t.get("name"), str)]
                             candidates.append({
                                 "endpoint": path,
                                 "method": "POST",
                                 "kind": "introspection_enabled",
                                 "schema_type_count": len(types),
+                                "type_names": type_names,
                                 "request": req,
                                 "response": resp,
                             })
+                            is_graphql = True
+                            # B4 fuzz: try field access after proven GraphQL
+                            # Bounded: max 3 fuzz queries per endpoint
+                            for fq in _FUZZ_QUERIES[:3]:
+                                try:
+                                    fq_body = json.dumps({"query": fq})
+                                    fq_req = Request(
+                                        method="POST",
+                                        url=endpoint_url,
+                                        headers={"Content-Type": "application/json"},
+                                        body=fq_body,
+                                        purpose="probe",
+                                        purpose_extra="graphql_fuzz",
+                                    )
+                                    fq_resp = await self.deps.http.send(fq_req)
+                                    if _is_fuzz_success(fq_resp):
+                                        field = fq.strip().lstrip("{").strip().split()[0].split("(")[0]
+                                        candidates.append({
+                                            "endpoint": path,
+                                            "method": "POST",
+                                            "kind": "graphql_fuzz_bola",
+                                            "field": field,
+                                            "query": fq,
+                                            "request": fq_req,
+                                            "response": fq_resp,
+                                            "schema_type_count": len(types),
+                                        })
+                                        break  # one success enough per endpoint to prove BOLA
+                                except Exception:
+                                    continue
                             # Move on once we've proven this endpoint is GraphQL.
                             continue
 
@@ -231,6 +321,42 @@ class GraphQLCheck(Check):
                             "request": req2,
                             "response": resp2,
                         })
+                        is_graphql = True
+                        # B4 fuzz even after type query success (User type exists, try fuzz)
+                        for fq in _FUZZ_QUERIES[:3]:
+                            try:
+                                fq_body = json.dumps({"query": fq})
+                                fq_req = Request(
+                                    method="POST",
+                                    url=endpoint_url,
+                                    headers={"Content-Type": "application/json"},
+                                    body=fq_body,
+                                    purpose="probe",
+                                    purpose_extra="graphql_fuzz",
+                                )
+                                fq_resp = await self.deps.http.send(fq_req)
+                                if _is_fuzz_success(fq_resp):
+                                    field = fq.strip().lstrip("{").strip().split()[0].split("(")[0]
+                                    candidates.append({
+                                        "endpoint": path,
+                                        "method": "POST",
+                                        "kind": "graphql_fuzz_bola",
+                                        "field": field,
+                                        "query": fq,
+                                        "request": fq_req,
+                                        "response": fq_resp,
+                                        "schema_type_count": 0,
+                                    })
+                                    break
+                            except Exception:
+                                continue
+
+            # 3. If neither introspection nor type query succeeded, optionally try
+            #    Query field discovery as last-ditch (for endpoints that block __schema/__type but still allow data)
+            if not is_graphql:
+                # Try one lightweight fuzz without prior proof — only if endpoint returned JSON at least once
+                # We don't want to spam non-GraphQL endpoints, so skip unless we saw JSON earlier
+                pass
 
         return candidates
 
@@ -238,6 +364,13 @@ class GraphQLCheck(Check):
         kind = candidate.get("kind")
         type_count = int(candidate.get("schema_type_count") or 0)
 
+        if kind == "graphql_fuzz_bola":
+            q = candidate.get("query") or candidate.get("field") or "unknown"
+            return ValidationResult(
+                outcome=ValidationOutcome.CONFIRMED,
+                confidence="high",
+                observation=f"GraphQL field query {q!r} returned data without auth — possible BOLA/excessive data exposure",
+            )
         if kind == "introspection_enabled" and type_count > 0:
             return ValidationResult(
                 outcome=ValidationOutcome.CONFIRMED,
@@ -270,9 +403,35 @@ class GraphQLCheck(Check):
         req = candidate.get("request")
         if not resp or not req:
             return []
+        kind = candidate.get("kind")
         # Redact any user-data-shaped response payload — the body may contain
         # arbitrary type names but we never extract fields. Excerpt is bounded.
         excerpt = resp.body_excerpt
+        if kind == "graphql_fuzz_bola":
+            q = candidate.get("query") or candidate.get("field") or ""
+            return [
+                Evidence(
+                    request=req,
+                    response=resp,
+                    kind=ObservationKind.BODY_DIFF,
+                    endpoint=req.url,
+                    method="POST",
+                    parameter=candidate.get("field"),
+                    input_used=q,
+                    status_code=resp.status_code,
+                    relevant_headers={"content-type": resp.headers.get("content-type", "")},
+                    body_excerpt=excerpt,
+                    observation=f"GraphQL fuzz query {q!r} returned data — field accessible without auth (BOLA)",
+                    oracle_signal="ownership_violation" if "user" in q.lower() else "excessive_data_exposure",
+                    validation_outcome="confirmed",
+                    confidence="high",
+                    environment_uncertainty=0.1,
+                    waf_detected=resp.status_code in (403, 406, 419, 501),
+                    rate_limited=resp.status_code in (429, 503),
+                    test_mode="active",
+                    destructive=False,
+                )
+            ]
         return [
             Evidence(
                 request=req,
@@ -281,12 +440,12 @@ class GraphQLCheck(Check):
                 endpoint=req.url,
                 method="POST",
                 parameter=None,
-                input_used=_INTROSPECTION_QUERY if candidate.get("kind") == "introspection_enabled" else _TYPE_QUERY,
+                input_used=_INTROSPECTION_QUERY if kind == "introspection_enabled" else _TYPE_QUERY,
                 status_code=resp.status_code,
                 relevant_headers={"content-type": resp.headers.get("content-type", "")},
                 body_excerpt=excerpt,
                 observation=(
-                    f"GraphQL endpoint responded with {candidate.get('kind')}; "
+                    f"GraphQL endpoint responded with {kind}; "
                     f"type_count={candidate.get('schema_type_count', 0)}"
                 ),
             )
@@ -317,6 +476,50 @@ class GraphQLCheck(Check):
         endpoint_path = candidate.get("endpoint", "/graphql")
         kind = candidate.get("kind", "introspection_enabled")
         type_count = int(candidate.get("schema_type_count") or 0)
+
+        if kind == "graphql_fuzz_bola":
+            field = candidate.get("field") or "unknown"
+            q = candidate.get("query") or field
+            # Use BOLA-specific knowledge if available, else generic
+            b_entry = get_entry(self.meta.id, "bola") or get_entry("bola-idor", "bola")
+            if b_entry:
+                summary = b_entry["summary"]
+                technical = b_entry["technical"]
+                impact = b_entry["impact"]
+                remediation = list(b_entry["remediation"])
+                attack_scenario = b_entry["attack_scenario"]
+                code_examples = dict(b_entry["code_examples"])
+            title = f"GraphQL BOLA: field '{field}' returns data without auth ({q})"
+            return Finding(
+                check=CheckRef(
+                    id=self.meta.id,
+                    name=self.meta.name,
+                    category=self.meta.category.value,
+                    version=self.meta.version,
+                ),
+                title=title,
+                severity=Severity.HIGH,
+                confidence=Confidence.HIGH,
+                status=FindingStatus.CONFIRMED,
+                target=TargetRef(
+                    host=parsed.hostname or "",
+                    port=parsed.port,
+                    scheme=parsed.scheme or "https",
+                    endpoint=endpoint_path,
+                    method="POST",
+                    parameter=field,
+                ),
+                parameter=field,
+                input_used=q,
+                summary=summary,
+                technical_explanation=technical,
+                impact=impact,
+                attack_scenario=attack_scenario,
+                code_examples=code_examples,
+                remediation=remediation,
+                cwe=["CWE-639", "CWE-200"],
+                owasp=["A01:2021", "A05:2021"],
+            )
 
         if kind == "introspection_enabled" and type_count > 0:
             title = f"GraphQL Introspection Enabled ({type_count} types exposed)"

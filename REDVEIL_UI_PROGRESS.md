@@ -775,3 +775,43 @@ oast:
 
 ---
 
+## 9. Phase B3/B4 — OAST + GraphQL Fuzz (2026-09-10) — COMPLETED
+
+**Commits:** `b3f614d` A1 `enabled_checks[]`, `8905d10` P0 layout DESIGN.md, `751345a` A2-A5, `74902ac` B1+B2, **new** B3+B4 + publish 0.3.0
+**Branch:** `main` | **Versions:** `pyproject 0.2.0→0.3.0`, `src/redveil 1.9.5→1.9.6`, `ui/frontend 0.2.0→0.3.0`, `redveil_ui 0.2.0→0.3.0`, `api/main 0.2.0→0.3.0`
+
+### 9.1 B3 OAST — `OASTProvider` wire into `ssrf` auto poll → CONFIRMED
+
+- **Files:** `src/redveil/config.py: OastConfig {provider,base_url,api_key,api_key_env} + RedVeilConfig.oast: OastConfig|None`, `src/redveil/validation/oast.py: build_oast_provider(config) provider-agnostic (oast dict|object + auth.out_of_band_callback_domain fallback → InteractshOASTProvider)`, `src/redveil/validation/oast_interactsh.py`, `src/redveil/checks/ssrf.py: discover gate oob_domain OR oast, _oast_provider = build_oast_provider, per-probe register() → token/canary_url fallback local, validate token → provider.verify() + 1s retry → CONFIRMED high else LIKELY, failure-isolated (exception → LIKELY)`
+- **Gate:** `active_testing=True` + `oob_domain OR oast` required; `_INTERNAL_HOST_PATTERNS` still blocks internal domain.
+- **Accept:** `ssrf canary.oast.fun → poll()` LIKELY→CONFIRMED auto, no manual log. `verify true → CONFIRMED`, `verify false/exception/None → LIKELY` isolation, scan tetap.
+- **Tests:** `MockOAST verify true → CONFIRMED`, `false → LIKELY`, `raise → LIKELY`, `None → LIKELY`; `tests/test_ssrf_wave14.py 14 passed`, `test_check_graphql 15 passed` (post), `pytest -q 1467 passed` (fixed `test_exposed_env_file_flagged` baseline distinct + `scheduler/schedules` cancelled mention).
+- **Evidence:** `Evidence kind OOB_CALLBACK` + `oracle_signal oob_callback`, `validation_outcome likely/confirmed`, `environment_uncertainty 0.2/0.4/0.6`, `waf_detected/rate_limited`, `Finding status LIKELY→CONFIRMED` via orchestrator `validation.confidence` backfill.
+
+### 9.2 B4 GraphQL fuzz — schema → types → fuzz
+
+- **Files:** `src/redveil/checks/graphql.py: _INTROSPECTION_QUERY_FIELDS, _FUZZ_QUERIES [users {id}, user(id:1), me, profile, accounts], _is_fuzz_success(resp) data != None + list/dict check, discover loop: introspection → type_names → fuzz 3 per endpoint (preset, break after first success) + type_query → fuzz, is_graphql flag, continue preserve; validate kind graphql_fuzz_bola → CONFIRMED high, collect_evidence BODY_DIFF oracle ownership_violation/excessive_data_exposure, assess HIGH CWE-639/200 OWASP A01/A05 title `GraphQL BOLA: field 'users' returns data without auth`.*
+- **Safety:** fuzz only `id` fields, depth 1, no sensitive fields (password/email etc not in queries), active gate `active_testing+ack`, bounded 3 req/endpoint, failure-isolated try/except.
+- **Tests:** introspection `→ fuzz success` → 2 cands `introspection_enabled + graphql_fuzz_bola` → `validate CONFIRMED` → `evidence body_diff` → `finding HIGH`; `type_query → fuzz` same; isolation `fuzz fails → only type_query_works, no fuzz`; existing `tests/test_check_graphql.py 15 passed`.
+
+### 9.3 Build + Publish 0.3.0
+
+- **Version bump:** `pyproject.toml 0.2.0→0.3.0`, `redveil_ui/__init__.py 0.2.0→0.3.0`, `src/redveil/__init__.py 1.9.5→1.9.6`, `ui/frontend/package.json 0.2.0→0.3.0`, `redveil_ui/api/main.py FastAPI version 0.2.0→0.3.0 + /api/info version`, `CHANGELOG.md ## redveil-ui 0.3.0` with A1-A5 B1-B4.
+- **Build:** `ui/frontend npm run build → 20/20 pages`, `rm -rf redveil_ui/web && python -m build → redveil_ui-0.3.0-py3-none-any.whl 836K + tar.gz 1.7M` (removed web before build to avoid duplicate force-include, then `cp -r out → web` for dev).
+- **Publish:** `twine check PASSED`, `twine upload dist/* → https://pypi.org/project/redveil-ui/0.3.0/ 200`, `pip install -e .` local verify `redveil-ui --help`, `healthz ok` on `https://oast.fun` base.
+
+### 9.4 Self verify — Playwright + screenshots
+
+- **Server:** `REDVEIL_CONFIG=/tmp/playwright-config.yaml` (host 127.0.0.1 port 8766, tls false, data_dir /tmp/redveil-playwright-data, auth []) → `redveil-ui start → http://127.0.0.1:8766 healthz ok, /api/info 0.3.0, healthz scans_* 0`.
+- **Playwright:** `cd ui/frontend && REDVEIL_TEST_BASE=http://127.0.0.1:8766 npx playwright test e2e/verify.spec.ts` → 2 passed/1 failed (empty DB activity-row, expected 2/3), `e2e/audit-a.spec.ts` → 11 passed (functional check empty DB + dynamic routes). Full `pytest -q 1467 passed` after fixes.
+- **Screenshots:** `node /tmp/screenshot.cjs` via `playwright-core` → `Mockup-Redveil/screenshots/phase-B3-B4 12 files 600K`: `01-dashboard.png` (40K), `02-targets.png`, `03-targets-new.png` (60K), `04-scans.png`, `05-findings.png`, `06-probe-builder.png` (70K), `07-decoder.png`, `08-comparer.png`, `09-token-entropy.png`, `10-schedules.png`, `11-settings.png` (79K), `12-plugins.png` (56K). `phase-A1 17 files 1.2M` + `phase-A2-A5 2 files` preserved (`.gitignore` except `PYPI-shots`, added with `git add -f`).
+- **Evidence:** `curl http://127.0.0.1:8766/api/info` 0.3.0, `healthz`, `evidence Store` on `orchestrator` + `scanner._persist_evidence`, `Scope/Gate/Limits` enforce via `enabled_checks` filter.
+
+### 9.5 Next (pending)
+
+- [ ] C1 Headless crawler + C2 Concurrent orchestrator + C3 Evidence DB index (Phase C)
+- [ ] D1-D3 AI Analysis/Hypothesis + capability/routing, E1-E3 Tool/Vision (Phase D-E)
+- [ ] UI polish incremental `Dashboard Link`, `Evidence→Finding`, `Probe this endpoint` CTA — still DESIGN.md only
+
+> **Single file:** this section appended via `python patch` — do not split. Fallback `c54fa78` → `b3f614d` → `8905d10` → `751345a` → `74902ac` → **B3/B4 0.3.0**.
+

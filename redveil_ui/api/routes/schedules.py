@@ -1,4 +1,5 @@
 """Scheduled scans: cron-based auto scans (0.3.0)."""
+# Statuses: pending, running, completed, failed, cancelled — schedule creates pending scans
 from __future__ import annotations
 
 from datetime import UTC, datetime

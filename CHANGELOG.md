@@ -1,5 +1,23 @@
 # Changelog
 
+## redveil-ui 0.3.0 — 2026-09-10
+
+### added
+- **Capability-first scan tuning**: `enabled_checks[]` allowlist via `RedVeilConfig.enabled_checks`, `cli scan --checks xss,sqli --checks-file`, `POST /api/scans {enabled_checks}` + UI `targets/new` multiselect (reuse `GET /api/checks`).
+- **WordlistManager (A2)**: curated builtin 91→811 with extensions, soft-404 hash/length/phrase, `SecLists from_file`, `disclosure` random baseline, `mapper` seeds.
+- **OpenAPI parser (A3)**: `openapi.yaml/json` 3.x+2.0 → `ApplicationModel`, `config openapi_spec 200KB`, `cli --openapi`, `POST /api/scans {openapi_spec}`.
+- **Raw Repeater (A4)**: `POST /api/replay/custom {method,url,headers,body,samples}` → `ReplayEngine` `Reproducible/Flaky`, scope 403 rate-limited.
+- **Generic AI Gateway P1 (A5)**: provider-agnostic `AiConfig {enabled, provider:{type,protocol,base_url,api_key,api_key_env,model,headers,capabilities}, models:{fast,reasoning,vision}}` via `httpx` + `sanitizer`, `detect_capabilities()` best-effort `/v1/models` fallback, adapters OpenAI/Anthropic/OpenAI-compatible (`https://any-proxy.web.id/v1`, `http://localhost:11434/v1`), failure-isolated.
+- **OAST provider abstraction (B3)**: `validation/oast.py OASTProvider ABC + OastConfig`, `InteractshOASTProvider` default `https://oast.fun`, `config oast {provider,base_url,api_key,api_key_env}`, `SSRFCheck` auto `register → poll(1s retry) → CONFIRMED` via `build_oast_provider`, failure-isolated LIKELY fallback.
+- **Session rules (B1)**: `http/session_rules.py` CSRF regex extract `from body/header/json` → inject `header/cookie` per scope TTL 5m, `401/403 re-auth` `POST login_url` Set-Cookie retry once, `HttpClient` `send()` pre-hook + `send_raw()` bypass.
+- **Intruder full (B2)**: `probe/runner.py` `attack_mode sniper|battering_ram|pitchfork|cluster_bomb` + `payloads2/position2` + `payload_processors [url_encode,base64,hex,html_encode,prefix:,suffix:,upper/lower]`.
+- **GraphQL fuzz (B4)**: `checks/graphql.py` introspection `→ types → fuzz` via `_FUZZ_QUERIES {users, user(id:1), me, profile, accounts}` minimal `id` only, `_is_fuzz_success` + `graphql_fuzz_bola` kind `CONFIRMED HIGH` `CWE-639` BOLA, `collect_evidence BODY_DIFF` + `assess HIGH`.
+- **DESIGN.md compliance (P0)**: `low` accent `bg-sky`, `stat surface-1 no border 8px`, `tsc clean`, `Playwright 13/14`.
+
+### changed
+- `pyproject.toml` `redveil-ui 0.2.0 → 0.3.0`, `src/redveil 1.9.5 → 1.9.6`, `ui/frontend 0.2.0 → 0.3.0`.
+- `ScopeController` + `Gate` + `Limits` preserved through `enabled_checks` filtering and OAST/GraphQL fuzz.
+
 ## redveil-ui 0.2.0 — 2026-09-08
 
 ### added

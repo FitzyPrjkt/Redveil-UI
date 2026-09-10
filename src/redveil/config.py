@@ -303,6 +303,31 @@ class EnvironmentConfig(BaseModel):
         return v.lower().strip()
 
 
+class OastConfig(BaseModel):
+    """OAST provider config (B3) — provider-agnostic, default Interactsh."""
+
+    provider: str = Field(default="interactsh", description="Provider: interactsh|custom")
+    base_url: str = Field(default="https://oast.fun", description="OAST base URL, e.g. https://oast.fun or https://my-oast.example.com")
+    api_key: str | None = Field(default=None, description="API key for self-hosted OAST")
+    api_key_env: str | None = Field(default=None, description="Env var for API key")
+
+    @field_validator("base_url")
+    @classmethod
+    def _validate_base_url(cls, v: str) -> str:
+        if not v.startswith(("http://", "https://")):
+            raise ValueError("base_url must be http(s)")
+        return v.rstrip("/")
+
+    def resolved_api_key(self) -> str | None:
+        import os
+
+        if self.api_key_env:
+            env_val = os.environ.get(self.api_key_env)
+            if env_val:
+                return env_val
+        return self.api_key
+
+
 class RedVeilConfig(BaseSettings):
     """Root config. Can be loaded from YAML/JSON via pydantic-settings.
 
@@ -333,6 +358,8 @@ class RedVeilConfig(BaseSettings):
     ai: Any | None = Field(default=None, description="AI gateway config (see redveil.ai.config.AiConfig)")
     # Phase B1: optional session handling (CSRF + re-auth)
     session_handling: Any | None = Field(default=None, description="Session handling rules (see redveil.http.session_rules.SessionHandlingConfig)")
+    # Phase B3: optional OAST provider (provider-agnostic, default Interactsh)
+    oast: OastConfig | None = Field(default=None, description="OAST provider config (see OastConfig: provider, base_url, api_key, api_key_env)")
     # Phase A1: optional allowlist of check IDs to run. None/empty = all checks.
     # Validated lazily against registry in orchestrator/CLI (extra="ignore" keeps
     # old configs compatible). Stored as raw strings to avoid hard-coding the

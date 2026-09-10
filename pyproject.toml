@@ -1,6 +1,6 @@
 [project]
 name = "redveil-ui"
-version = "0.2.0"
+version = "0.3.0"
 description = "Self-hosted web dashboard for the redveil security scanner"
 readme = "PYPI_README.md"
 requires-python = ">=3.11"

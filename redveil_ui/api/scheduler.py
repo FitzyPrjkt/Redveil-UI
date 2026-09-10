@@ -1,4 +1,5 @@
 """Scheduler for cron-based scans (0.3.0)."""
+# Status handling covers: pending, running, completed, failed, cancelled (see scan_recovery)
 from __future__ import annotations
 
 import asyncio

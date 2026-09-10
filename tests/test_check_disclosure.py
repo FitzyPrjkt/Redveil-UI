@@ -82,8 +82,10 @@ async def test_html_comment_with_todo_flagged():
 @pytest.mark.asyncio
 async def test_exposed_env_file_flagged():
     check = InfoDisclosureCheck()
-    # First call: homepage, subsequent: debug paths
-    side_effects = [({}, "<html></html>")] + [(_resp(headers={}, body="KEY=value")) for _ in range(20)]
+    # First call: homepage, second: baseline 404 (distinct body to avoid soft-404 hash match with A2 WordlistManager)
+    # Subsequent: debug paths — .env should be flagged when body contains KEY=value and not soft-404
+    baseline = ({}, "404 page not found - baseline")
+    side_effects = [({}, "<html></html>"), baseline] + [(_resp(headers={}, body="KEY=value")) for _ in range(20)]
     _bind(check, side_effects)
     cands = await check.discover(MagicMock())
     env = [c for c in cands if c["kind"] == "exposed_env"]
