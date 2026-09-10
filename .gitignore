@@ -69,6 +69,7 @@ ui/frontend/test-results/*.png
 # Exception: PYPI-shots/ is tracked (used in the published redveil-ui README).
 Mockup-Redveil/*
 !Mockup-Redveil/PYPI-shots/
+!Mockup-Redveil/screenshots/
 
 # Lab integration tests — require Docker, not for public release
 tests/lab/
