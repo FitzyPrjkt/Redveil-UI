@@ -819,8 +819,7 @@ oast:
 
 **Trigger:** Koreksi `DESIGN.md bukan lock IA` — 3 capability user-facing butuh dedicated page (prinsip: internal→tidak, workflow besar→buat route). Approved `boleh gas` 2026-09-10.
 
-**Sidebar:** `ui/frontend/src/components/sidebar.tsx:25` `IconFileCode/IconKey/IconRobot` (Tabler 18-20 muted) urutan:
-`Dashboard / → Targets /targets → OpenAPI /openapi → Scan History /scans → Findings /findings → Session Rules /session-rules → Schedules /schedules → Plugins /plugins → AI Gateway /ai → Probe Builder /probe-builder → Settings /settings`
+**Sidebar:** `ui/frontend/src/components/sidebar.tsx:25-80` `IconFileCode/IconKey/IconRobot` (Tabler 18-20 muted) urutan **workflow** `Dashboard / → Targets /targets → Scan History /scans → Findings /findings → [separator Configure] OpenAPI /openapi → Session Rules /session-rules → Probe Builder /probe-builder → Plugins /plugins → Schedules /schedules → [separator System] AI Gateway /ai → Settings /settings` (separators `Configure`/`System` `h-px bg-zinc-800` + `font-mono 10px uppercase tracking-widest`)
 Token `DESIGN.md` `active bg-zinc-800` `text-zinc-400→200`, `border-zinc-800 bg-zinc-950`.
 
 **Wireframe:**
