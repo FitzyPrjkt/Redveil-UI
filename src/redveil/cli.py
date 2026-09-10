@@ -337,6 +337,7 @@ async def _run_scan(cfg: RedVeilConfig, gate_mode: str = "non_interactive") -> N
         scope=ScopeController(cfg.scope),
         limits=cfg.limits,
         auth=build_auth_provider(cfg.auth),
+        session_handling=getattr(cfg, "session_handling", None),
     ) as http:
         deps = OrchestratorDeps(
             bus=bus, registry=reg, config=cfg, http=http, gate=action_gate,

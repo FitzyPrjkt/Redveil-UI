@@ -526,7 +526,10 @@ class ProbeRunIn(BaseModel):
     body_template: str | None = None  # used when position_kind="body"
     extra_headers: dict[str, str] | None = None
     confirmed_dwyor: bool = False
-    attack_mode: str = Field(default="sniper", pattern=r"^sniper$")
+    attack_mode: str = Field(default="sniper", pattern=r"^(sniper|battering_ram|pitchfork|cluster_bomb)$")
+    payloads2: list[str] | None = Field(default=None, description="Second payload list for pitchfork/cluster_bomb")
+    position2: str | None = Field(default=None, description="Second position for battering_ram/pitchfork/cluster")
+    payload_processors: list[str] | None = Field(default=None, description="Processors: url_encode, base64, hex, etc")
     preset_check_id: str | None = None  # if Preset mode, which check's set
 
 

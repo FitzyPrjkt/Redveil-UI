@@ -408,6 +408,7 @@ class Scanner:
                 limits=cfg.limits,
                 auth=AnonymousAuth(),
                 follow_redirects=cfg.scope.follow_redirects,
+                session_handling=getattr(cfg, "session_handling", None),
             ) as http:
                 deps = OrchestratorDeps(
                     bus=bus,

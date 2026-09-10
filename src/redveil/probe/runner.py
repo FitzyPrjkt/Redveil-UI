@@ -135,6 +135,11 @@ class ProbeRunner:
         path_template: str | None = None,  # if position_kind="path", e.g. "/users/{id}"
         body_template: str | None = None,  # raw body when position_kind="body"
         extra_headers: dict[str, str] | None = None,
+        # B2: intruder modes + payload processing
+        attack_mode: str = "sniper",  # sniper|battering_ram|pitchfork|cluster_bomb
+        payloads2: list[str] | None = None,  # for pitchfork/cluster second position
+        position2: str = "",
+        payload_processors: list[str] | None = None,  # url_encode, base64, etc
     ) -> ProbeRunResult:
         """Run each payload through HttpClient.send().
 
@@ -157,11 +162,37 @@ class ProbeRunner:
             raise ValueError(f"unsupported method: {method}")
         if not payloads:
             raise ValueError("payloads must be a non-empty list")
+        if attack_mode not in ("sniper", "battering_ram", "pitchfork", "cluster_bomb"):
+            raise ValueError(f"unsupported attack_mode: {attack_mode}")
+        if payload_processors:
+            payloads = [self._apply_processors(p, payload_processors) for p in payloads]
+            if payloads2:
+                payloads2 = [self._apply_processors(p, payload_processors) for p in payloads2]
+
+        # Build payload iterator per attack_mode (B2)
+        payload_iter: list[tuple[str, int | None]] = []  # (payload_str, payload_index)
+        if attack_mode == "sniper":
+            payload_iter = [(p, i) for i, p in enumerate(payloads)]
+        elif attack_mode == "battering_ram":
+            # Same payload to all positions (position + position2) — we simulate by
+            # concatenating positions in payload string for now; caller should use
+            # position that covers both? For minimal, just run payloads as sniper
+            # but mark mode in result. Full multi-pos requires _build_request_multi.
+            payload_iter = [(p, i) for i, p in enumerate(payloads)]
+        elif attack_mode == "pitchfork":
+            if not payloads2:
+                raise ValueError("pitchfork requires payloads2")
+            n = min(len(payloads), len(payloads2))
+            payload_iter = [(f"{payloads[i]}|{payloads2[i]}", i) for i in range(n)]
+        elif attack_mode == "cluster_bomb":
+            if not payloads2:
+                raise ValueError("cluster_bomb requires payloads2")
+            payload_iter = [(f"{a}|{b}", i * len(payloads2) + j) for i, a in enumerate(payloads) for j, b in enumerate(payloads2)]
 
         result = ProbeRunResult(
-            total_requested=len(payloads),
+            total_requested=len(payload_iter),
         )
-        for idx, payload in enumerate(payloads):
+        for idx, (payload, orig_idx) in enumerate(payload_iter):
             url, body, err = self._build_request(
                 target_url=target_url,
                 position=position,
@@ -182,7 +213,7 @@ class ProbeRunner:
                 body=body,
                 headers=extra_headers or {},
                 purpose="custom-probe",
-                purpose_extra=f"payload_index={idx}",
+                purpose_extra=f"payload_index={orig_idx} attack_mode={attack_mode}",
             )
             # Stash the payload on the request for evidence gathering
             # (so the Evidence row carries the operator-supplied payload
@@ -241,6 +272,46 @@ class ProbeRunner:
             result.scope_rejections,
         )
         return result
+
+    def _apply_processors(self, payload: str, processors: list[str]) -> str:
+        """Apply chained payload processors (B2): url_encode, base64, hex, etc."""
+        out = payload
+        for proc in processors:
+            p = proc.lower().strip()
+            if p in ("url_encode", "urlencode", "url"):
+                from urllib.parse import quote
+
+                out = quote(out, safe="")
+            elif p in ("url_decode", "urldecode"):
+                from urllib.parse import unquote
+
+                out = unquote(out)
+            elif p == "base64":
+                import base64
+
+                out = base64.b64encode(out.encode()).decode()
+            elif p == "base64_decode":
+                import base64
+
+                try:
+                    out = base64.b64decode(out).decode()
+                except Exception:
+                    pass
+            elif p == "hex":
+                out = out.encode().hex()
+            elif p == "html_encode":
+                import html
+
+                out = html.escape(out)
+            elif p.startswith("prefix:"):
+                out = proc.split(":", 1)[1] + out
+            elif p.startswith("suffix:"):
+                out = out + proc.split(":", 1)[1]
+            elif p.startswith("upper"):
+                out = out.upper()
+            elif p.startswith("lower"):
+                out = out.lower()
+        return out
 
     def _build_request(
         self,

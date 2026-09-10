@@ -507,6 +507,10 @@ async def run_custom_probe(
                 path_template=body.path_template,
                 body_template=body.body_template,
                 extra_headers=body.extra_headers,
+                attack_mode=body.attack_mode,
+                payloads2=body.payloads2,
+                position2=body.position2 or "",
+                payload_processors=body.payload_processors,
             )
     except Exception as exc:  # noqa: BLE001
         log.exception("probe: runner setup failed: %s", exc)

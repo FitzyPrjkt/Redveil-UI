@@ -331,6 +331,8 @@ class RedVeilConfig(BaseSettings):
     openapi_spec: str | None = Field(default=None, description="OpenAPI spec content (yaml/json) to seed endpoints")
     # Phase A5: optional AI gateway config (provider-agnostic, any proxy web)
     ai: Any | None = Field(default=None, description="AI gateway config (see redveil.ai.config.AiConfig)")
+    # Phase B1: optional session handling (CSRF + re-auth)
+    session_handling: Any | None = Field(default=None, description="Session handling rules (see redveil.http.session_rules.SessionHandlingConfig)")
     # Phase A1: optional allowlist of check IDs to run. None/empty = all checks.
     # Validated lazily against registry in orchestrator/CLI (extra="ignore" keeps
     # old configs compatible). Stored as raw strings to avoid hard-coding the

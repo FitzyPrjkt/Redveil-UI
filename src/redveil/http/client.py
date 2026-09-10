@@ -29,6 +29,12 @@ from redveil.http.request import Request
 from redveil.http.response import Response
 from redveil.http.session import AnonymousAuth, AuthProvider
 
+try:
+    from redveil.http.session_rules import SessionHandlingConfig, SessionRuleEngine
+except ImportError:
+    SessionHandlingConfig = None  # type: ignore
+    SessionRuleEngine = None  # type: ignore
+
 
 class HttpClient:
     """Async HTTP client with mandatory scope enforcement.
@@ -48,11 +54,26 @@ class HttpClient:
         limits: LimitsConfig,
         auth: AuthProvider | None = None,
         follow_redirects: bool = True,
+        session_handling: Any | None = None,
     ):
         self._scope = scope
         self._limits = limits
         self._auth: AuthProvider = auth or AnonymousAuth()
         self._follow_redirects = follow_redirects
+        # B1: session rule engine (optional, additive)
+        self._session_engine: Any | None = None
+        if session_handling is not None and SessionRuleEngine is not None:
+            try:
+                # session_handling may be SessionHandlingConfig or dict
+                if isinstance(session_handling, dict):
+                    from redveil.http.session_rules import SessionHandlingConfig as _SHC
+
+                    cfg = _SHC(**session_handling)
+                else:
+                    cfg = session_handling
+                self._session_engine = SessionRuleEngine(cfg)
+            except Exception:
+                self._session_engine = None
         self._bucket = TokenBucket(
             rate=limits.requests_per_second,
             capacity=limits.max_concurrent_requests,
@@ -116,6 +137,51 @@ class HttpClient:
                 f"refusing further requests"
             )
 
+        await self._bucket.acquire()
+        async with self._semaphore:
+            self._request_count += 1
+            # B1: pre-request CSRF injection (except for session_rule itself)
+            if self._session_engine is not None and request.purpose not in ("session_rule", "session_reauth"):
+                # Prepare headers/cookies via engine (may fetch token)
+                tmp_headers = dict(request.headers)
+                tmp_cookies = dict(request.cookies)
+                try:
+                    await self._session_engine.prepare_request(
+                        tmp_headers, tmp_cookies, request.url, request.method, self
+                    )
+                    # Apply back to request (copy, not mutate original beyond this send)
+                    request = request.model_copy(update={"headers": tmp_headers, "cookies": tmp_cookies})
+                except Exception:
+                    pass
+            resp = await self._do_send(request, follow_chain=[])
+            # B1: handle 401/403 re-auth once
+            if self._session_engine is not None and resp.status_code in (401, 403) and request.purpose not in ("session_rule", "session_reauth"):
+                try:
+                    # Try re-auth, then retry once with fresh token
+                    headers = dict(request.headers)
+                    cookies = dict(request.cookies)
+                    retried = await self._session_engine.handle_401(
+                        request.url, request.method, resp.status_code, headers, cookies, self
+                    )
+                    if retried:
+                        # Re-prepare after re-auth
+                        await self._session_engine.prepare_request(headers, cookies, request.url, request.method, self)
+                        retry_req = request.model_copy(update={"headers": headers, "cookies": cookies})
+                        # Need to re-check scope for retry? Already allowed
+                        resp = await self._do_send(retry_req, follow_chain=[])
+                except Exception:
+                    pass
+            return resp
+
+    async def send_raw(self, request: Request) -> Response:
+        """Send without session rule processing (for rule's own fetch)."""
+        if self._client is None:
+            raise RuntimeError("HttpClient used outside 'async with' context")
+        decision = self._scope.check(request.url, method=request.method)
+        if not decision.allowed:
+            raise ScopeViolation(f"out-of-scope request blocked: {request.url} ({decision.reason})")
+        if self._request_count >= self._limits.max_requests:
+            raise RuntimeError(f"max_requests limit ({self._limits.max_requests}) reached")
         await self._bucket.acquire()
         async with self._semaphore:
             self._request_count += 1
