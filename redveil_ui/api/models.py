@@ -143,3 +143,35 @@ class ScheduledScan(Base):
     next_run_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
     target: Mapped[Target] = relationship("Target")
+
+
+class OpenApiSpec(Base):
+    """Stored OpenAPI spec for management page /openapi (Phase C)."""
+
+    __tablename__ = "openapi_specs"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    spec: Mapped[str] = mapped_column(Text, nullable=False)  # raw yaml/json
+    created_at: Mapped[datetime] = mapped_column(default=_now, nullable=False)
+    parsed: Mapped[dict | None] = mapped_column(JSON, nullable=True, default=None)  # {endpoints: [{method,path,params}]}
+
+
+class SessionRuleSet(Base):
+    """Singleton session rules config for /session-rules (Phase C)."""
+
+    __tablename__ = "session_rule_sets"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    config: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)  # SessionHandlingConfig dict
+    updated_at: Mapped[datetime] = mapped_column(default=_now, onupdate=_now, nullable=False)
+
+
+class AiConfigStore(Base):
+    """Singleton AI gateway config for /ai (Phase C)."""
+
+    __tablename__ = "ai_configs"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    config: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)  # AiConfig dict
+    updated_at: Mapped[datetime] = mapped_column(default=_now, onupdate=_now, nullable=False)

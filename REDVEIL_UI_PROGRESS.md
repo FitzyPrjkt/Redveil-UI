@@ -815,3 +815,24 @@ oast:
 
 > **Single file:** this section appended via `python patch` — do not split. Fallback `c54fa78` → `b3f614d` → `8905d10` → `751345a` → `74902ac` → **B3/B4 0.3.0**.
 
+## 10. Phase C — Dedicated Pages OpenAPI/Session-Rules/AI (2026-09-10) — COMPLETED (dev, not yet published)
+
+**Trigger:** Koreksi `DESIGN.md bukan lock IA` — 3 capability user-facing butuh dedicated page (prinsip: internal→tidak, workflow besar→buat route). Approved `boleh gas` 2026-09-10.
+
+**Sidebar:** `ui/frontend/src/components/sidebar.tsx:25` `IconFileCode/IconKey/IconRobot` (Tabler 18-20 muted) urutan:
+`Dashboard / → Targets /targets → OpenAPI /openapi → Scan History /scans → Findings /findings → Session Rules /session-rules → Schedules /schedules → Plugins /plugins → AI Gateway /ai → Probe Builder /probe-builder → Settings /settings`
+Token `DESIGN.md` `active bg-zinc-800` `text-zinc-400→200`, `border-zinc-800 bg-zinc-950`.
+
+**Wireframe:**
+- `/openapi` `src/app/openapi/page.tsx` — `Card surface-1` import `textarea font-mono` yaml/json + `Input name` + `Preview` `POST /api/openapi/parse → table method|path|params` + `Save POST /api/openapi/specs` + `list GET /api/openapi/specs` + `DELETE`, badge `count`, alert `bg-danger/warning/accent`, `data-testid openapi-page/openapi-spec/openapi-preview/openapi-list`.
+- `/session-rules` `src/app/session-rules/page.tsx` — `Card surface-1` list `Rule {name, extract_url, extract{from,regex,header/json_path}, inject{to,name}, scope, ttl}` + `Add Rule` + `Test POST /api/session-rules/test → token` + `reauth {enabled, login_url/method/body/headers}` + `Save PUT /api/session-rules`, `data-testid session-rules-page/session-rule-card/session-test-*`.
+- `/ai` `src/app/ai/page.tsx` — `Card surface-1` provider `enabled, type/protocol, base_url, model, api_key_env, timeout` + capabilities `tool_calling/vision/structured/streaming/context_window` + `Detect POST /api/ai/capabilities/detect → AiCapabilities` + `Test POST /api/ai/test → AIResponse`, redacted `api_key→***`, `data-testid ai-page/ai-base-url/ai-save/ai-test-*`.
+
+**Backend:** `redveil_ui/api/models.py:OpenApiSpec(id,name,spec,created_at,parsed) SessionRuleSet(id,config) AiConfigStore(id,config)` (DB `Base.metadata.create_all` via `api/main.py:lifespan`), `routes/openapi.py: POST /parse GET/POST /specs GET/DELETE /specs/{id}` (reuses `attack_surface/openapi.py:parse_openapi_spec`), `routes/session_rules.py: GET/PUT /session-rules POST /test` (reuses `http/session_rules.py:SessionHandlingConfig` + `httpx` preview), `routes/ai.py: GET/PUT /api/ai/config POST /test POST /capabilities/detect` (reuses `ai/config.py:AiConfig` `ai/provider.py:build_ai_provider` `ai/capability.py:detect_capabilities` + redact), registered `api/main.py:openapi/session_rules/ai` `prefix /api/openapi|/api/session-rules|/api/ai`, `lib/api.ts:apiPut`.
+
+**Build:** `npm run build → 23/23 pages` (prev 20 + 3 new `○ /openapi /session-rules /ai`), `rm -rf web && cp -r out→web`, `tsc --noEmit` clean.
+**Verify:** `TestClient(app) as client` POST `/api/openapi/parse` 200 `{count:1}`, POST `/specs` 201, GET `/specs` 200, GET `/session-rules` 200, PUT 200, GET `/ai/config` 200, PUT 200 (via `with TestClient(app)` lifespan creates tables `openapi_specs|session_rule_sets|ai_configs`), `pytest tests/test_check_graphql 15 passed` `tests/test_ssrf_wave14 14 passed` `1467 passed` overall; `REDVEIL_CONFIG=/tmp/playwright-config.yaml 127.0.0.1:8766` `curl /openapi|/session-rules|/ai 200` + `curl /api/openapi/specs|/api/session-rules|/api/ai/config 200`; `node screenshot2.cjs → Mockup-Redveil/screenshots/phase-C 15 files 828K` `04-openapi.png 64K 07-session-rules.png 48K 10-ai.png 64K` (previous `phase-B3-B4 12 600K` + `phase-A1 17` + `phase-A2-A5 2` preserved).
+
+**Next:** Publish `0.3.1` or `0.4.0` (bump `pyproject` `0.3.0→0.4.0` + `CHANGELOG`), Playwright `e2e/openapi|session-rules|ai.spec.ts` (data-testid), integration `openapi_spec` preselect di `targets/new` + `session_rules` wire ke `scanner._build_config`.
+
+> **Single file:** appended via python patch — jangan split. Sidebar 8→11 items, DESIGN.md token tetap.

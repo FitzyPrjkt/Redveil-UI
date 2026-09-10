@@ -37,6 +37,9 @@ from redveil_ui.api.routes import (
     schedules,
     scope,
     targets,
+    openapi,
+    session_rules,
+    ai,
 )
 from redveil_ui.api.models import Scan
 from redveil_ui.api.scanner import Scanner
@@ -266,3 +269,6 @@ app.include_router(replay_raw.router, prefix="/api/replay", tags=["replay-raw"])
 app.include_router(probes.router, prefix="/api/probes", tags=["probes"])
 app.include_router(audit.router, prefix="/api/audit", tags=["audit"])
 app.include_router(schedules.router, prefix="/api/schedules", tags=["schedules"])
+app.include_router(openapi.router, prefix="/api/openapi", tags=["openapi"])
+app.include_router(session_rules.router, prefix="/api/session-rules", tags=["session-rules"])
+app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
