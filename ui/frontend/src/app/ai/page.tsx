@@ -103,7 +103,7 @@ export default function AiPage() {
   return (
     <div className="mx-auto max-w-5xl space-y-8" data-testid="ai-page">
       <header className="space-y-2">
-        <h1 className="flex items-center gap-2 font-serif text-3xl font-bold tracking-tight text-zinc-100">
+        <h1 className="flex items-center gap-2 font-sans text-3xl font-semibold tracking-tight text-zinc-100">
           <IconRobot size={24} className="text-zinc-400" />
           AI Gateway
         </h1>
@@ -116,7 +116,7 @@ export default function AiPage() {
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-400">Provider</h2>
           <label className="flex items-center gap-2 text-sm text-zinc-300">
-            <input type="checkbox" checked={config.enabled} onChange={(e) => setConfig((prev) => ({ ...prev, enabled: e.target.checked }))} className="h-4 w-4 rounded border-zinc-600 bg-zinc-950" data-testid="ai-enabled" />
+            <input type="checkbox" checked={config.enabled} onChange={(e) => setConfig((prev) => ({ ...prev, enabled: e.target.checked }))} className="h-4 w-4 cursor-pointer rounded border-zinc-700 bg-zinc-900 accent-sky-500" data-testid="ai-enabled" />
             Enabled
           </label>
         </div>

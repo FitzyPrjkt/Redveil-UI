@@ -56,7 +56,7 @@ export function Sidebar() {
         <span className="font-mono text-sm font-semibold tracking-tight text-zinc-100">
           redveil
         </span>
-        <span className="ml-auto font-mono text-xs text-zinc-500">1.9.5</span>
+        <span className="ml-auto font-mono text-xs text-zinc-500">1.9.9</span>
       </div>
 
       {/* Nav */}

@@ -58,7 +58,7 @@ export default function TargetsListPage() {
       <header className="flex items-center justify-between">
         <div>
           <h1
-            className="font-serif text-3xl font-bold tracking-tight text-zinc-100"
+            className="font-sans text-3xl font-semibold tracking-tight text-zinc-100"
             data-testid="targets-list-title"
           >
             Targets

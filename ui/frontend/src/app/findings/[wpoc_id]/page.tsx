@@ -3,12 +3,12 @@
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { IconAlertTriangle, IconCircleCheck, IconHistory } from "@tabler/icons-react";
+import { IconAlertTriangle, IconCircleCheck, IconHistory, IconRobot, IconSparkles } from "@tabler/icons-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge as UiBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { apiGet, apiPatch } from "@/lib/api";
+import { apiGet, apiPatch, apiPost } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 type Severity = "critical" | "high" | "medium" | "low" | "info";
@@ -100,6 +100,9 @@ export default function FindingDetailPage({
   const [notesSaving, setNotesSaving] = useState(false);
   const [notesError, setNotesError] = useState<string | null>(null);
   const [notesSuccess, setNotesSuccess] = useState(false);
+  const [aiExplain, setAiExplain] = useState<null | { explanation: string; impact: string; remediation: string; confidence_justification: string; false_positive_likelihood: string; references: string[] }>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -145,6 +148,30 @@ export default function FindingDetailPage({
     }
   }
 
+  async function handleAiExplain() {
+    setAiLoading(true);
+    setAiError(null);
+    try {
+      const res = await apiPost<{ ok: boolean; explanation?: string; impact?: string; remediation?: string; confidence_justification?: string; false_positive_likelihood?: string; references?: string[]; error?: string }>(`/api/findings/${wpoc_id}/explain`, {});
+      if (res.ok && res.explanation) {
+        setAiExplain({
+          explanation: res.explanation,
+          impact: res.impact || "",
+          remediation: res.remediation || "",
+          confidence_justification: res.confidence_justification || "",
+          false_positive_likelihood: res.false_positive_likelihood || "",
+          references: res.references || [],
+        });
+      } else {
+        setAiError(res.error || "AI explain failed");
+      }
+    } catch (e: unknown) {
+      setAiError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAiLoading(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="space-y-6" data-testid="finding-detail-loading">
@@ -183,7 +210,7 @@ export default function FindingDetailPage({
       <header className="space-y-3">
         <div className="flex items-center gap-3">
           <h1
-            className="font-serif text-3xl font-bold tracking-tight text-zinc-100"
+            className="font-sans text-3xl font-semibold tracking-tight text-zinc-100"
             data-testid="finding-title"
           >
             {finding.title}
@@ -245,8 +272,69 @@ export default function FindingDetailPage({
               </span>
             </div>
           )}
+          <Button
+            data-testid="ai-explain-button"
+            variant="outline"
+            onClick={handleAiExplain}
+            disabled={aiLoading}
+            className="gap-1.5 border-zinc-700 bg-zinc-950 text-zinc-300 hover:bg-zinc-800"
+          >
+            <IconRobot size={14} aria-hidden="true" />
+            {aiLoading ? "Explaining…" : "Explain with AI"}
+          </Button>
         </CardContent>
       </Card>
+
+      {aiError ? (
+        <div role="alert" data-testid="ai-explain-error" className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">
+          AI explain failed: {aiError}
+        </div>
+      ) : null}
+      {aiExplain ? (
+        <Card className="rounded-xl border border-zinc-800 bg-zinc-900" data-testid="ai-explain-card">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-zinc-400">
+              <IconSparkles size={14} aria-hidden="true" />
+              AI Analysis
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div>
+              <h4 className="text-xs font-medium uppercase tracking-wider text-zinc-500">Explanation</h4>
+              <p className="mt-1 text-sm leading-relaxed text-zinc-200">{aiExplain.explanation}</p>
+            </div>
+            {aiExplain.impact ? (
+              <div>
+                <h4 className="text-xs font-medium uppercase tracking-wider text-zinc-500">Impact</h4>
+                <p className="mt-1 text-sm text-zinc-300">{aiExplain.impact}</p>
+              </div>
+            ) : null}
+            {aiExplain.remediation ? (
+              <div>
+                <h4 className="text-xs font-medium uppercase tracking-wider text-zinc-500">Remediation</h4>
+                <p className="mt-1 whitespace-pre-wrap text-sm text-zinc-300">{aiExplain.remediation}</p>
+              </div>
+            ) : null}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-lg bg-zinc-950 p-3">
+                <div className="text-xs font-medium uppercase tracking-wider text-zinc-500">Confidence</div>
+                <p className="mt-1 font-mono text-xs text-zinc-300">{aiExplain.confidence_justification}</p>
+              </div>
+              <div className="rounded-lg bg-zinc-950 p-3">
+                <div className="text-xs font-medium uppercase tracking-wider text-zinc-500">False-positive likelihood</div>
+                <p className="mt-1 font-mono text-xs text-zinc-300">{aiExplain.false_positive_likelihood}</p>
+              </div>
+            </div>
+            {aiExplain.references.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {aiExplain.references.map((r, i) => (
+                  <span key={i} className="rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1 font-mono text-xs text-zinc-400">{r}</span>
+                ))}
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
 
       {finding.finding_data?.summary ? (
         <Card className="rounded-xl border border-zinc-800 bg-zinc-900">

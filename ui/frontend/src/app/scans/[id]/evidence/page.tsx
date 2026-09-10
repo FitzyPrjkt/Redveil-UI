@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import {
@@ -238,7 +239,13 @@ function EvidenceRowItem({
           <div className="flex flex-wrap gap-3 text-xs text-zinc-500">
             <span>
               finding:{" "}
-              <code className="font-mono text-zinc-400">{row.finding_id}</code>
+              <Link
+                href={`/findings/${row.finding_id}`}
+                data-testid="evidence-finding-link"
+                className="font-mono text-sky-400 hover:text-sky-300 hover:underline"
+              >
+                {row.finding_id}
+              </Link>
             </span>
             {row.severity ? (
               <span>
@@ -345,7 +352,7 @@ export default function EvidenceLogPage() {
   return (
     <div className="space-y-8" data-testid="evidence-log-page">
       <header className="space-y-2">
-        <h1 className="font-serif text-3xl font-bold tracking-tight text-zinc-100">
+        <h1 className="font-sans text-3xl font-semibold tracking-tight text-zinc-100">
           Evidence log
         </h1>
         {target ? (

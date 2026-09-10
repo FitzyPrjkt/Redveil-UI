@@ -102,7 +102,7 @@ export default function OpenApiPage() {
   return (
     <div className="mx-auto max-w-5xl space-y-8" data-testid="openapi-page">
       <header className="space-y-2">
-        <h1 className="flex items-center gap-2 font-serif text-3xl font-bold tracking-tight text-zinc-100">
+        <h1 className="flex items-center gap-2 font-sans text-3xl font-semibold tracking-tight text-zinc-100">
           <IconFileCode size={24} className="text-zinc-400" />
           OpenAPI
         </h1>

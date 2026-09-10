@@ -398,36 +398,61 @@ export default function ScanDetailPage({
             data-testid="findings-list"
             className="space-y-3"
           >
-            {findings.map((f) => (
+            {findings.map((f) => {
+              // Probe CTA: prefill probe-builder with endpoint/method
+              const ep = f.endpoint ?? "";
+              // endpoint may be "GET https://host/api/path" or just "/api/path"
+              let probeHref = "/probe-builder";
+              try {
+                const parts = ep.trim().split(/\s+/);
+                const methodOrPath = parts.length > 1 ? parts[0] : "GET";
+                const path = parts.length > 1 ? parts.slice(1).join(" ") : parts[0];
+                // Extract path only
+                let probePath = path;
+                try {
+                  const u = new URL(path);
+                  probePath = u.pathname + (u.search || "");
+                } catch {}
+                const params = new URLSearchParams();
+                if (probePath && probePath !== "—") params.set("endpoint", probePath);
+                if (methodOrPath && /^[A-Z]+$/.test(methodOrPath)) params.set("method", methodOrPath);
+                if (params.toString()) probeHref = `/probe-builder?${params.toString()}`;
+              } catch {}
+              return (
               <li key={f.id}>
-                <Link
-                  href={`/findings/${f.wpoc_id}`}
-                  data-testid="finding-card"
-                  className="block"
-                >
-                  <Card className="rounded-xl border border-zinc-800 bg-zinc-900 p-5 transition-colors hover:border-zinc-700">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="min-w-0 flex-1 space-y-1.5">
-                        <h3 className="font-serif text-lg text-zinc-100">
-                          {f.title}
-                        </h3>
-                        <div className="flex flex-wrap items-center gap-2 font-mono text-xs text-zinc-500">
-                          <span className="truncate">
-                            {f.endpoint ?? "—"}
-                          </span>
-                        </div>
+                <Card className="rounded-xl border border-zinc-800 bg-zinc-900 p-5 transition-colors hover:border-zinc-700">
+                  <div className="flex items-start justify-between gap-4">
+                    <Link
+                      href={`/findings/${f.wpoc_id}`}
+                      data-testid="finding-card"
+                      className="min-w-0 flex-1 space-y-1.5"
+                    >
+                      <h3 className="font-sans text-base font-semibold text-zinc-100 hover:text-sky-400 transition-colors">
+                        {f.title}
+                      </h3>
+                      <div className="font-mono text-xs text-zinc-500">
+                        <span className="truncate">{f.endpoint ?? "—"}</span>
                       </div>
+                    </Link>
+                    <div className="flex shrink-0 flex-col items-end gap-2">
                       <UiBadge
                         variant="outline"
-                        className={cn("shrink-0 border", severityClass(f.severity))}
+                        className={cn("border", severityClass(f.severity))}
                       >
                         {f.severity}
                       </UiBadge>
+                      <Link
+                        href={probeHref}
+                        data-testid="probe-this-endpoint"
+                        className="rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1 font-mono text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+                      >
+                        Probe this endpoint
+                      </Link>
                     </div>
-                  </Card>
-                </Link>
+                  </div>
+                </Card>
               </li>
-            ))}
+            )})}
           </ul>
         )
       ) : null}

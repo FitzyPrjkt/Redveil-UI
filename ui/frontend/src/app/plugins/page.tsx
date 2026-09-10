@@ -193,7 +193,7 @@ export default function PluginsPage() {
   return (
     <div className="space-y-8">
       <header className="space-y-2">
-        <h1 className="font-serif text-3xl font-bold tracking-tight text-zinc-100">
+        <h1 className="font-sans text-3xl font-semibold tracking-tight text-zinc-100">
           Plugins
         </h1>
         <p className="text-sm text-zinc-400">

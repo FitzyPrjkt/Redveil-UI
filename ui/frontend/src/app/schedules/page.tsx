@@ -80,7 +80,7 @@ export default function SchedulesPage() {
   return (
     <div className="space-y-8" data-testid="schedules-page">
       <header className="space-y-2">
-        <h1 className="font-serif text-3xl font-bold tracking-tight text-zinc-100">Schedules</h1>
+        <h1 className="font-sans text-3xl font-semibold tracking-tight text-zinc-100">Schedules</h1>
         <p className="text-sm text-zinc-400">Cron-based auto scans. Cron format: min hour day month weekday (e.g. 0 2 * * *).</p>
       </header>
 

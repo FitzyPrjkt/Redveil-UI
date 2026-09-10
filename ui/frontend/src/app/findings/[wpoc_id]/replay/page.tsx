@@ -211,7 +211,7 @@ export default function ReplayPage({
         ) : finding ? (
           <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="font-serif text-3xl font-bold tracking-tight text-zinc-100">
+              <h1 className="font-sans text-3xl font-semibold tracking-tight text-zinc-100">
                 Replay
               </h1>
               <UiBadge variant="outline" className="border-zinc-700 text-zinc-300">

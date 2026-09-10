@@ -73,7 +73,7 @@ export default function FindingsListPage() {
   return (
     <div className="space-y-8" data-testid="findings-list-page">
       <header className="space-y-2">
-        <h1 className="font-serif text-3xl font-bold tracking-tight text-zinc-100">
+        <h1 className="font-sans text-3xl font-semibold tracking-tight text-zinc-100">
           Findings
         </h1>
         <p className="text-sm text-zinc-400">
@@ -132,7 +132,7 @@ export default function FindingsListPage() {
                       <div className="min-w-0 flex-1 space-y-1.5">
                         <h3
                           className={cn(
-                            "font-serif text-lg",
+                            "font-sans text-base font-semibold",
                             suppressed ? "text-zinc-400" : "text-zinc-100",
                           )}
                         >

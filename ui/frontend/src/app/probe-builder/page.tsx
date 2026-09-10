@@ -4,11 +4,14 @@ import { useEffect, useMemo, useState } from "react";
 import {
   IconAlertTriangle,
   IconArrowRight,
+  IconBomb,
   IconCheck,
   IconCopy,
+  IconGitFork,
   IconHistory,
   IconLock,
   IconShieldLock,
+  IconTarget,
   IconWaveSine,
   IconX,
 } from "@tabler/icons-react";
@@ -91,10 +94,18 @@ export default function ProbeBuilderPage() {
   );
   const [pathTemplate, setPathTemplate] = useState<string>("");
   const [bodyTemplate, setBodyTemplate] = useState<string>("");
+  // B2: attack mode + processors
+  const [attackMode, setAttackMode] = useState<"sniper" | "battering_ram" | "pitchfork" | "cluster_bomb">("sniper");
+  const [payloadProcessors, setPayloadProcessors] = useState<string[]>([]);
+  const [processorInput, setProcessorInput] = useState<string>("url_encode");
+  const [prefixInput, setPrefixInput] = useState<string>("");
+  const [suffixInput, setSuffixInput] = useState<string>("");
+  const [payloads2, setPayloads2] = useState<string>("");
+  const [position2, setPosition2] = useState<string>("");
   // preset mode
   const [presetCheckId, setPresetCheckId] = useState<string>("");
   const [presetPayloadIndices, setPresetPayloadIndices] = useState<string>(
-    "",
+    "0,1,2",
   );
   // custom mode
   const [customPayloads, setCustomPayloads] = useState<string>("");
@@ -126,6 +137,28 @@ export default function ProbeBuilderPage() {
       .catch(() => {
         /* non-fatal — UI falls back to custom mode */
       });
+    // Prefill from query ?endpoint=&method= (from Scan detail Probe CTA)
+    try {
+      const sp = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
+      const ep = sp.get("endpoint");
+      const m = sp.get("method");
+      if (ep) {
+        if (ep.includes("?") || ep.includes("{")) {
+          setPositionKind("query");
+          const q = ep.split("?")[1] || "";
+          const param = q.split("=")[0] || q.split("&")[0] || "q";
+          setPosition(param || "q");
+          setPathTemplate(ep);
+        } else {
+          setPositionKind("path");
+          setPathTemplate(ep.includes("{payload}") ? ep : `${ep}`);
+          setPosition(ep);
+        }
+      }
+      if (m && ["GET","POST","PUT","DELETE","PATCH","HEAD","OPTIONS"].includes(m.toUpperCase())) {
+        setMethod(m.toUpperCase() as Method);
+      }
+    } catch {}
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -151,7 +184,19 @@ export default function ProbeBuilderPage() {
       .filter((s) => s.length > 0);
   }, [mode, customPayloads]);
 
-  const payloadCount = mode === "preset" ? presetPayloadList.length : customPayloadList.length;
+  const payloads2List = useMemo(() => payloads2.split("\n").map((s) => s.trim()).filter(Boolean), [payloads2]);
+  const baseCount = mode === "preset" ? presetPayloadList.length : customPayloadList.length;
+  const payloadCount = (() => {
+    if (attackMode === "pitchfork") {
+      if (payloads2List.length === 0) return baseCount;
+      return Math.min(baseCount, payloads2List.length);
+    }
+    if (attackMode === "cluster_bomb") {
+      if (payloads2List.length === 0) return baseCount;
+      return baseCount * payloads2List.length;
+    }
+    return baseCount;
+  })();
   const rps = 2.0; // matches LimitsConfig default
   const estDurationSec = payloadCount > 0 ? Math.ceil(payloadCount / rps) : 0;
   const canSubmit =
@@ -180,7 +225,7 @@ export default function ProbeBuilderPage() {
     setSubmitError(null);
     setResult(null);
     try {
-      const body = {
+      const body: Record<string, unknown> = {
         target_id: selectedTarget.id,
         method,
         position: position || "q",
@@ -188,11 +233,15 @@ export default function ProbeBuilderPage() {
         path_template: positionKind === "path" ? pathTemplate : null,
         body_template: positionKind === "body" ? bodyTemplate : null,
         confirmed_dwyor: true,
-        attack_mode: "sniper",
+        attack_mode: attackMode,
         preset_check_id: mode === "preset" ? presetCheckId : null,
-        payloads:
-          mode === "preset" ? presetPayloadList : customPayloadList,
+        payloads: mode === "preset" ? presetPayloadList : customPayloadList,
+        payload_processors: payloadProcessors.length ? payloadProcessors : null,
       };
+      if (attackMode === "pitchfork" || attackMode === "cluster_bomb" || attackMode === "battering_ram") {
+        if (position2) body.position2 = position2;
+        if (payloads2List.length) body.payloads2 = payloads2List;
+      }
       const data = await apiPost<ProbeRunResult>("/api/probes/custom", body);
       setResult(data);
     } catch (err: unknown) {
@@ -236,7 +285,7 @@ export default function ProbeBuilderPage() {
             className="shrink-0 text-zinc-500"
             aria-hidden="true"
           />
-          <h1 className="font-serif text-3xl font-bold tracking-tight text-zinc-100">
+          <h1 className="font-sans text-3xl font-semibold tracking-tight text-zinc-100">
             Probe Builder
           </h1>
         </div>
@@ -307,9 +356,19 @@ export default function ProbeBuilderPage() {
             {targets === null ? (
               <Skeleton className="h-8 w-full" />
             ) : targets.length === 0 ? (
-              <p className="text-xs text-zinc-500">
-                No targets configured. Create one in Targets first.
-              </p>
+              <div data-testid="empty-targets" className="rounded-xl border border-zinc-800 bg-zinc-900 p-8 text-center">
+                <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-zinc-800">
+                  <IconTarget size={20} className="text-zinc-500" aria-hidden="true" />
+                </div>
+                <h3 className="mt-3 font-sans text-sm font-medium text-zinc-300">No targets yet</h3>
+                <p className="mt-1 text-xs text-zinc-500">Create a target to start probing. You can also import from OpenAPI.</p>
+                <div className="mt-4 flex justify-center gap-2">
+                  <a href="/targets/new" data-testid="empty-create-target" className="inline-flex items-center gap-1.5 rounded-lg bg-sky-500 px-4 py-2 text-sm font-medium text-white hover:bg-sky-600">
+                    Create target
+                  </a>
+                  <a href="/targets" className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-950 px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800">Learn about Probe Builder</a>
+                </div>
+              </div>
             ) : (
               <select
                 data-testid="target-select"
@@ -401,6 +460,84 @@ export default function ProbeBuilderPage() {
             )}
           </div>
 
+          {/* Position Preview — Item 2 */}
+          <div data-testid="position-preview" className="rounded-xl border border-zinc-800 bg-zinc-900 p-3">
+            <div className="text-xs font-medium uppercase tracking-wider text-zinc-500">Preview</div>
+            {(() => {
+              const base = selectedTarget?.url?.replace(/\/$/, "") ?? "https://target.example.com";
+              const payloadHl = <span className="rounded border border-sky-500/30 bg-sky-500/20 px-1 font-mono text-sky-300">[PAYLOAD]</span>;
+              if (positionKind === "body") {
+                const tmpl = bodyTemplate || '{"id": "{payload}"}';
+                const parts = tmpl.split("{payload}");
+                return (
+                  <div className="mt-2 space-y-1">
+                    <div className="font-mono text-xs text-zinc-200">{method} {base} <span className="text-zinc-500">(body)</span></div>
+                    <pre className="overflow-x-auto rounded-md bg-zinc-950 p-2 font-mono text-xs text-zinc-300">{parts[0]}<span className="rounded border border-sky-500/30 bg-sky-500/20 px-1 text-sky-300">PAYLOAD</span>{parts[1] ?? ""}</pre>
+                    <div className="font-mono text-xs text-zinc-500">2 rps · ScopeController ✓</div>
+                  </div>
+                );
+              }
+              if (positionKind === "path") {
+                const tmpl = pathTemplate || "/api/users/{payload}";
+                const url = `${base}${tmpl.startsWith("/") ? tmpl : `/${tmpl}`}`;
+                const preview = url.replace("{payload}", "§PAYLOAD§");
+                const [pre, post] = preview.split("§PAYLOAD§");
+                return (
+                  <div className="mt-2 space-y-1">
+                    <div className="font-mono text-xs text-zinc-200">{method} <span className="text-zinc-400">{pre}</span>{payloadHl}<span className="text-zinc-400">{post}</span></div>
+                    <div className="font-mono text-xs text-zinc-500">2 rps · ScopeController ✓</div>
+                  </div>
+                );
+              }
+              // query
+              const param = position || "q";
+              return (
+                <div className="mt-2 space-y-1">
+                  <div className="font-mono text-xs text-zinc-200">{method} {base}?<span className="text-zinc-400">{param}=</span>{payloadHl}</div>
+                  <div className="font-mono text-xs text-zinc-500">2 rps · ScopeController ✓</div>
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* Attack Mode — B2 */}
+          <div className="space-y-3 rounded-lg border border-zinc-800 bg-zinc-950 p-4" data-testid="attack-mode-section">
+            <label className="text-xs font-medium uppercase tracking-wider text-zinc-400">Attack Mode</label>
+            <div role="tablist" className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {[
+                { id: "sniper", label: "Sniper", Icon: IconTarget, desc: "1 payload, 1 posisi bergiliran" },
+                { id: "battering_ram", label: "Battering Ram", Icon: IconCopy, desc: "1 payload, N posisi bersamaan" },
+                { id: "pitchfork", label: "Pitchfork", Icon: IconGitFork, desc: "2 list paralel, paired" },
+                { id: "cluster_bomb", label: "Cluster Bomb", Icon: IconBomb, desc: "cartesian product" },
+              ].map((m) => {
+                const active = attackMode === m.id;
+                const Ico = m.Icon;
+                return (
+                  <button
+                    key={m.id}
+                    role="tab"
+                    aria-selected={active}
+                    data-testid={`attack-mode-${m.id}`}
+                    onClick={() => setAttackMode(m.id as typeof attackMode)}
+                    className={`flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition-colors ${active ? "border-sky-500/50 bg-sky-500/10 text-sky-200" : "border-zinc-700 bg-zinc-900 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"}`}
+                  >
+                    <span className="flex items-center gap-1.5 text-xs font-semibold"><Ico size={14} aria-hidden="true" />{m.label}</span>
+                    <span className="font-mono text-xs leading-tight text-zinc-500">{m.desc}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <p className="font-mono text-xs text-zinc-400" data-testid="attack-mode-desc">
+              {attackMode === "sniper" ? "Sniper — 1 payload, 1 posisi bergiliran (q=PAYLOAD)" : attackMode === "battering_ram" ? "Battering Ram — 1 payload ke N posisi bersamaan (q & id = same)" : attackMode === "pitchfork" ? "Pitchfork — 2 list paralel, row-by-row (user[0]:pass[0])" : "Cluster Bomb — cartesian product (user × pass = 9 req jika 3×3)"}
+            </p>
+            {(attackMode === "battering_ram" || attackMode === "pitchfork" || attackMode === "cluster_bomb") ? (
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium uppercase tracking-wider text-zinc-400">Position 2 {attackMode === "battering_ram" ? "(same payload)" : ""}</label>
+                <input data-testid="position2-input" type="text" value={position2} onChange={(e) => setPosition2(e.target.value)} placeholder={attackMode === "battering_ram" ? "id (same payload)" : "id"} className="h-8 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-2 font-mono text-sm text-zinc-100 placeholder:text-zinc-500" />
+              </div>
+            ) : null}
+          </div>
+
           {/* Payload source */}
           {mode === "preset" ? (
             <PresetPayloadForm
@@ -417,6 +554,75 @@ export default function ProbeBuilderPage() {
               count={customPayloadList.length}
             />
           )}
+          {(attackMode === "pitchfork" || attackMode === "cluster_bomb") ? (
+            <div className="space-y-1.5 rounded-lg border border-zinc-800 bg-zinc-950 p-4" data-testid="payloads2-section">
+              <label className="text-xs font-medium uppercase tracking-wider text-zinc-400">Payloads 2 — list kedua ({attackMode === "pitchfork" ? "paired" : "cartesian"})</label>
+              <textarea data-testid="payloads2-input" rows={3} value={payloads2} onChange={(e) => setPayloads2(e.target.value)} placeholder={"admin\ntest\npayload for second position"} className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 font-mono text-sm text-zinc-100 placeholder:text-zinc-500" />
+              <p className="font-mono text-xs text-zinc-500">{payloads2.split("\n").filter(Boolean).length} payloads{attackMode === "cluster_bomb" && customPayloadList.length ? ` × ${customPayloadList.length} = ${customPayloadList.length * payloads2.split("\n").filter(Boolean).length} requests` : attackMode === "pitchfork" ? ` → ${Math.min(customPayloadList.length, payloads2.split("\n").filter(Boolean).length)} requests (paired)` : ""}</p>
+            </div>
+          ) : null}
+
+          {/* Payload Processors — B2 */}
+          <div className="space-y-3 rounded-lg border border-zinc-800 bg-zinc-950 p-4" data-testid="processors-section">
+            <label className="text-xs font-medium uppercase tracking-wider text-zinc-400">Payload Processors</label>
+            <div className="flex flex-wrap items-center gap-2">
+              <select data-testid="processor-select" value={processorInput} onChange={(e) => setProcessorInput(e.target.value)} className="h-8 rounded-lg border border-zinc-700 bg-zinc-900 px-2 text-sm text-zinc-100">
+                <option value="url_encode">url_encode</option>
+                <option value="base64">base64</option>
+                <option value="hex">hex</option>
+                <option value="html_encode">html_encode</option>
+                <option value="upper">upper</option>
+                <option value="lower">lower</option>
+                <option value="prefix:">prefix:</option>
+                <option value="suffix:">suffix:</option>
+              </select>
+              {(processorInput === "prefix:" || processorInput === "suffix:") ? (
+                <>
+                  <input data-testid="processor-prefix-input" type="text" value={processorInput.startsWith("prefix:") ? prefixInput : suffixInput} onChange={(e) => processorInput.startsWith("prefix:") ? setPrefixInput(e.target.value) : setSuffixInput(e.target.value)} placeholder={processorInput.startsWith("prefix:") ? "prefix value" : "suffix value"} className="h-8 w-24 rounded-lg border border-zinc-700 bg-zinc-900 px-2 font-mono text-sm text-zinc-100 placeholder:text-zinc-500" />
+                  <Button data-testid="processor-add" size="sm" variant="outline" onClick={() => {
+                    const val = processorInput.startsWith("prefix:") ? `prefix:${prefixInput}` : `suffix:${suffixInput}`;
+                    if (!val.split(":")[1]) return;
+                    setPayloadProcessors([...payloadProcessors, val]);
+                    setPrefixInput(""); setSuffixInput("");
+                  }}>Add</Button>
+                </>
+              ) : (
+                <Button data-testid="processor-add" size="sm" variant="outline" onClick={() => { if (!payloadProcessors.includes(processorInput)) setPayloadProcessors([...payloadProcessors, processorInput]); }}>Add</Button>
+              )}
+            </div>
+            {payloadProcessors.length > 0 ? (
+              <div className="flex flex-wrap gap-2" data-testid="processor-chips">
+                {payloadProcessors.map((proc, idx) => (
+                  <span key={`${proc}-${idx}`} data-testid="processor-chip" className="inline-flex items-center gap-1 rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1 font-mono text-xs text-zinc-300">
+                    {proc}
+                    <button data-testid={`processor-remove-${idx}`} onClick={() => setPayloadProcessors(payloadProcessors.filter((_, i) => i !== idx))} className="ml-1 text-zinc-500 hover:text-zinc-200">×</button>
+                    <span className="ml-1 flex gap-0.5">
+                      <button data-testid={`processor-up-${idx}`} disabled={idx===0} onClick={() => { const a=[...payloadProcessors]; [a[idx-1],a[idx]]=[a[idx],a[idx-1]]; setPayloadProcessors(a); }} className="px-1 text-zinc-500 hover:text-zinc-200 disabled:opacity-30">↑</button>
+                      <button data-testid={`processor-down-${idx}`} disabled={idx===payloadProcessors.length-1} onClick={() => { const a=[...payloadProcessors]; [a[idx],a[idx+1]]=[a[idx+1],a[idx]]; setPayloadProcessors(a); }} className="px-1 text-zinc-500 hover:text-zinc-200 disabled:opacity-30">↓</button>
+                    </span>
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="font-mono text-xs text-zinc-500">No processors — payload dikirim apa adanya.</p>
+            )}
+            {(() => {
+              const sample = mode === "preset" ? "test' OR 1=1" : (customPayloadList[0] || "test' OR 1=1");
+              let out = sample;
+              for (const p of payloadProcessors) {
+                const proc = p.toLowerCase();
+                if (proc === "url_encode") out = encodeURIComponent(out);
+                else if (proc === "base64") try { out = btoa(out); } catch {}
+                else if (proc === "hex") out = [...out].map(c => c.charCodeAt(0).toString(16).padStart(2,"0")).join("");
+                else if (proc === "html_encode") out = out.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+                else if (proc.startsWith("prefix:")) out = p.slice(7) + out;
+                else if (proc.startsWith("suffix:")) out = out + p.slice(7);
+                else if (proc === "upper") out = out.toUpperCase();
+                else if (proc === "lower") out = out.toLowerCase();
+              }
+              return <div data-testid="processor-preview" className="rounded-md bg-zinc-900 p-2 font-mono text-xs"><span className="text-zinc-500">preview:</span> <span className="text-sky-300">{sample}</span> <span className="text-zinc-500">→</span> <span className="text-emerald-300">{out}</span></div>;
+            })()}
+          </div>
         </CardContent>
       </Card>
 

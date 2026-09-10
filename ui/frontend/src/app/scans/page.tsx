@@ -113,7 +113,7 @@ export default function ScanHistoryPage() {
     <div className="space-y-8" data-testid="scan-history">
       <header className="space-y-2">
         <h1
-          className="font-serif text-3xl font-bold tracking-tight text-zinc-100"
+          className="font-sans text-3xl font-semibold tracking-tight text-zinc-100"
           data-testid="scan-history-title"
         >
           Scan history

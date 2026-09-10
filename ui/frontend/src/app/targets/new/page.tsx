@@ -187,7 +187,7 @@ export default function NewScanPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-8">
       <header className="space-y-2">
-        <h1 className="font-serif text-3xl font-bold tracking-tight text-zinc-100">
+        <h1 className="font-sans text-3xl font-semibold tracking-tight text-zinc-100">
           New Scan
         </h1>
         <p className="text-sm text-zinc-400">
@@ -480,7 +480,7 @@ export default function NewScanPage() {
                           e.target.checked ? [...prev, c.id] : prev.filter((x) => x !== c.id),
                         );
                       }}
-                      className="mt-0.5 h-4 w-4 rounded border-zinc-600 bg-zinc-950"
+                      className="mt-0.5 h-4 w-4 cursor-pointer rounded border-zinc-700 bg-zinc-900 accent-sky-500"
                       data-testid={`check-${c.id}`}
                     />
                     <span className="flex-1">
