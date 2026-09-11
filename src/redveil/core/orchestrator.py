@@ -13,6 +13,7 @@ requires no orchestrator changes.
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -49,7 +50,7 @@ class OrchestratorDeps:
     registry: Registry
     config: RedVeilConfig
     http: HttpClient
-    gate: Any = None  # redveil.validation.gate.ActionGate (optional)
+    gate: any = None  # redveil.validation.gate.ActionGate (optional)
 
 
 class Orchestrator:
@@ -70,6 +71,16 @@ class Orchestrator:
         # Evidence store: id -> Evidence. Kept on the orchestrator so it
         # survives the full scan and can be handed to the reporter.
         self._evidence: dict[str, Evidence] = {}
+        # C2: lock for evidence_store + findings (concurrent writers)
+        self._evidence_lock = asyncio.Lock()
+        # C2: concurrency control — max_concurrent_checks from LimitsConfig
+        try:
+            _max = int(getattr(self._config.limits, "max_concurrent_requests", 5))
+        except Exception:
+            _max = 5
+        if _max < 1:
+            _max = 1
+        self._sem = asyncio.Semaphore(_max)
         # Deduplicator for findings discovered across checks
         self._dedup = FindingDeduplicator()
         # Behavior Engine: ApplicationModel + StateHistory. Built lazily
@@ -135,7 +146,7 @@ class Orchestrator:
             self._bind_all_checks()
         except Exception as e:
             # Non-fatal: checks that don't need the model still work.
-            self._bus.publish(Event(
+            await self._bus.publish(Event(
                 EventType.ERROR, source="attack_surface_mapper",
                 data={"phase": "model_build", "error": str(e),
                       "type": type(e).__name__},
@@ -215,7 +226,7 @@ class Orchestrator:
         return self._ctx
 
     async def _discovery_phase(self) -> None:
-        """Run discover() on every registered check.
+        """Run discover() on every registered check (concurrent, C2).
 
         Discovers endpoints, parameters, and other surface area. Plugins that
         don't implement discover() raise NotImplementedError, which is
@@ -226,15 +237,22 @@ class Orchestrator:
         # Build the ApplicationModel via AttackSurfaceMapper BEFORE running
         # any check.discover() so checks that consume the model have it ready.
         await self._build_application_model()
-        for check in self._enabled_checks():
-            try:
-                await check.discover(self._ctx)  # type: ignore[arg-type]
-            except NotImplementedError:
-                pass
+
+        async def _discover_one(check):
+            async with self._sem:
+                try:
+                    await check.discover(self._ctx)  # type: ignore[arg-type]
+                except NotImplementedError:
+                    pass
+
+        checks = self._enabled_checks()
+        if checks:
+            await asyncio.gather(*[_discover_one(c) for c in checks])
+
         await self._bus.publish(Event(EventType.DISCOVERY_ENDED, source="orchestrator"))
 
     async def _check_phase(self) -> None:
-        """Run discover() on every registered check and emit candidates.
+        """Run discover() on every registered check and emit candidates (concurrent).
 
         Each check produces candidate findings, which are emitted as
         FINDING_DETECTED events. The actual validation/evidence/assess
@@ -242,16 +260,14 @@ class Orchestrator:
         and the heavy lifting separable for future async parallelism.
         """
         self._ctx.transition(ScanState.CHECKING)
-        # Defensive re-bind: checks should already have been bound at
-        # construction time. If a plugin replaced itself in the registry
-        # between init and run, we still want it to have its deps.
         deps = CheckDependencies(
             http=self._http,
             scope=self._http._scope,
             config=self._config,
             context=self._ctx,
         )
-        for check in self._enabled_checks():
+
+        async def _check_one(check):
             if check._deps is None:  # type: ignore[attr-defined]
                 check.bind(deps)
             await self._bus.publish(Event(EventType.CHECK_STARTED, source=check.id))
@@ -269,8 +285,17 @@ class Orchestrator:
                 )
             await self._bus.publish(Event(EventType.CHECK_ENDED, source=check.id))
 
+        checks = self._enabled_checks()
+        # Run with concurrency limit
+        if checks:
+            # Wrap each with semaphore
+            async def _with_sem(c):
+                async with self._sem:
+                    await _check_one(c)
+            await asyncio.gather(*[_with_sem(c) for c in checks])
+
     async def _validate_phase(self) -> None:
-        """Validate, collect evidence, and assess each candidate.
+        """Validate, collect evidence, and assess each candidate (concurrent per-check).
 
         For each check, we re-run discover() to get candidates, then for
         each candidate:
@@ -300,7 +325,7 @@ class Orchestrator:
             context=self._ctx,
         )
 
-        for check in self._enabled_checks():
+        async def _validate_one(check):
             if check._deps is None:  # type: ignore[attr-defined]
                 check.bind(deps)
 
@@ -308,9 +333,9 @@ class Orchestrator:
             try:
                 candidates = await check.discover(self._ctx)  # type: ignore[arg-type]
             except NotImplementedError:
-                continue
+                return
             if not candidates:
-                continue
+                return
 
             for candidate in candidates:
                 candidate_id = getattr(candidate, "id", None) or str(candidate)
@@ -323,14 +348,11 @@ class Orchestrator:
                 )
 
                 # 1. Validate
-                validation: ValidationResult | None = None
                 try:
                     validation = await check.validate(self._ctx, candidate)  # type: ignore[arg-type]
                 except NotImplementedError:
                     validation = None
-
                 if validation is None:
-                    # No validation required; we'll still try to assess().
                     validation = ValidationResult(
                         outcome=ValidationOutcome.LIKELY,
                         confidence="medium",
@@ -351,7 +373,6 @@ class Orchestrator:
                 )
 
                 if outcome is ValidationOutcome.FALSE_POSITIVE:
-                    # Drop candidate
                     continue
 
                 # 2. Collect evidence (from validate() result + collect_evidence())
@@ -362,35 +383,32 @@ class Orchestrator:
                     more = []
                 evidence.extend(more)
 
-                # Store evidence and publish EVIDENCE_CAPTURED per item
-                for ev in evidence:
-                    self._evidence[ev.id] = ev
-                    await self._bus.publish(
-                        Event(
-                            EventType.EVIDENCE_CAPTURED,
-                            source=check.id,
-                            data={
-                                "evidence_id": ev.id,
-                                "kind": ev.kind.value,
-                                "endpoint": ev.endpoint,
-                            },
+                # Store evidence and publish EVIDENCE_CAPTURED per item (with lock)
+                async with self._evidence_lock:
+                    for ev in evidence:
+                        self._evidence[ev.id] = ev
+                        await self._bus.publish(
+                            Event(
+                                EventType.EVIDENCE_CAPTURED,
+                                source=check.id,
+                                data={
+                                    "evidence_id": ev.id,
+                                    "kind": ev.kind.value,
+                                    "endpoint": ev.endpoint,
+                                },
+                            )
                         )
-                    )
 
                 # 3. Assess (produce Finding)
-                finding: Finding | None = None
                 try:
                     finding = await check.assess(candidate)  # type: ignore[arg-type]
                 except NotImplementedError:
                     finding = None
 
                 if finding is None:
-                    # Check didn't produce a Finding; skip
                     continue
 
-                # Backfill evidence ids + status
                 evidence_ids = list(set(finding.evidence_ids) | {ev.id for ev in evidence})
-                # Map confidence string from validation into the enum if needed
                 confidence_enum = finding.confidence
                 try:
                     confidence_enum = Confidence(validation.confidence)
@@ -411,23 +429,31 @@ class Orchestrator:
                     "status": status,
                 })
 
-                # Register the finding through the deduplicator
-                merged = self._dedup.add(finding)
-                if merged.id not in {f.id for f in self._ctx.findings}:
-                    self._ctx.findings.append(merged)
+                # Register the finding through the deduplicator (with lock)
+                async with self._evidence_lock:
+                    merged = self._dedup.add(finding)
+                    if merged.id not in {f.id for f in self._ctx.findings}:
+                        self._ctx.findings.append(merged)
 
-                if outcome is ValidationOutcome.CONFIRMED:
-                    await self._bus.publish(
-                        Event(
-                            EventType.FINDING_CONFIRMED,
-                            source=check.id,
-                            data={
-                                "finding_id": merged.id,
-                                "severity": merged.severity.value,
-                                "confidence": merged.confidence.value,
-                            },
+                    if outcome is ValidationOutcome.CONFIRMED:
+                        await self._bus.publish(
+                            Event(
+                                EventType.FINDING_CONFIRMED,
+                                source=check.id,
+                                data={
+                                    "finding_id": merged.id,
+                                    "severity": merged.severity.value,
+                                    "confidence": merged.confidence.value,
+                                },
+                            )
                         )
-                    )
+
+        checks = self._enabled_checks()
+        if checks:
+            async def _with_sem(c):
+                async with self._sem:
+                    await _validate_one(c)
+            await asyncio.gather(*[_with_sem(c) for c in checks])
 
     async def _report_phase(self) -> None:
         """Render the final report.

@@ -94,6 +94,49 @@ class AttackSurfaceMapper:
             self._absorb_response(base, resp)
             self._extract_endpoints_from_body(base, resp.body)
 
+        # 3b. Headless crawler for SPA (C1) — when enabled, re-crawl via playwright to capture JS links
+        if getattr(self._config, "headless", False):
+            try:
+                from redveil.discovery.headless import HeadlessCrawler, HeadlessConfig, is_headless_available
+
+                if is_headless_available():
+                    hcfg_raw = getattr(self._config, "headless_config", None) or {}
+                    # Merge scope hosts into headless config
+                    allowed = set()
+                    try:
+                        allowed = set(getattr(self._config.scope, "allowed_hosts", []) or [])
+                    except Exception:
+                        allowed = set()
+                    if not allowed and parsed.hostname:
+                        allowed = {parsed.hostname.lower()}
+                    hcfg = HeadlessConfig(
+                        max_pages=int(hcfg_raw.get("max_pages", 100)),
+                        max_depth=int(hcfg_raw.get("max_depth", 3)),
+                        allowed_hosts=allowed,
+                        excluded_paths=set(hcfg_raw.get("excluded_paths", []) or []),
+                        honor_robots=bool(hcfg_raw.get("honor_robots", True)),
+                        wait_until=str(hcfg_raw.get("wait_until", "networkidle")),
+                        timeout_ms=int(hcfg_raw.get("timeout_ms", 15000)),
+                        extra_wait_ms=int(hcfg_raw.get("extra_wait_ms", 500)),
+                        capture_requests=bool(hcfg_raw.get("capture_requests", True)),
+                    )
+                    h_crawler = HeadlessCrawler(http_client=self._http, config=hcfg)
+                    h_result = await h_crawler.crawl(f"{base}/")
+                    for u in h_result.urls_visited:
+                        try:
+                            ep = self._url_to_endpoint(base, u, "GET")
+                            if ep:
+                                self._add_endpoint(ep)
+                        except Exception:
+                            continue
+            except Exception as e:
+                # Failure-isolated: headless errors do not fail the scan
+                try:
+                    from redveil.core.event_bus import Event, EventType  # noqa
+                except Exception:
+                    pass
+                pass
+
         # 4. Probe a small set of common API paths to seed the model
         #     (these are the paths BOLA/BFLA checks will look at) — now via WordlistManager (A2)
         try:

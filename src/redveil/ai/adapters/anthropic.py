@@ -59,8 +59,10 @@ class AnthropicAdapter(AIProvider):
                 else:
                     anth_messages.append({"role": m["role"], "content": content})
 
+        base_url = self.config.resolved_base_url() or self.config.base_url
+        model = self.config.resolved_model()
         body: dict[str, Any] = {
-            "model": self.config.model,
+            "model": model,
             "messages": anth_messages,
             "max_tokens": kwargs.get("max_tokens", 1024),
         }
@@ -76,7 +78,7 @@ class AnthropicAdapter(AIProvider):
         if self.config.extra_body:
             body.update(self.config.extra_body)
 
-        url = f"{self.config.base_url}/messages"
+        url = f"{base_url}/messages"
         resp = await self._client.post(url, json=body, headers=headers)
         resp.raise_for_status()
         data = resp.json()

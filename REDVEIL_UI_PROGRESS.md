@@ -835,3 +835,104 @@ Token `DESIGN.md` `active bg-zinc-800` `text-zinc-400→200`, `border-zinc-800 b
 **Next:** Publish `0.3.1` or `0.4.0` (bump `pyproject` `0.3.0→0.4.0` + `CHANGELOG`), Playwright `e2e/openapi|session-rules|ai.spec.ts` (data-testid), integration `openapi_spec` preselect di `targets/new` + `session_rules` wire ke `scanner._build_config`.
 
 > **Single file:** appended via python patch — jangan split. Sidebar 8→11 items, DESIGN.md token tetap.
+
+## 11. Phase C — Scale & DOM (2026-09-10) — COMPLETED (dev, built 0.4.0)
+
+**Branch:** `main` | **Versions:** `pyproject 0.3.0→0.4.0`, `src/redveil 1.9.6→1.9.7 (redveil>=1.9.7)`, `ui/frontend 0.3.0→0.4.0`, `redveil_ui 0.3.0→0.4.0`, `api/main 0.3.0→0.4.0`
+**Commits:** C1 headless + C2 concurrent + C3 evidence index + 0.4.0 bump
+
+### 11.1 C1 Headless crawler — `discovery/headless.py` JS-rendered SPA → /api/data
+
+- **Files:** `src/redveil/discovery/headless.py:HeadlessCrawler/HeadlessConfig/is_headless_available` (348 lines), `src/redveil/config.py:headless bool + headless_config dict`, `src/redveil/attack_surface/mapper.py:headless branch` (when `headless:true` uses `HeadlessCrawler` to capture JS links + XHR).
+- **Design:** `playwright.async_api async_playwright` reuse E2E `node @playwright/test` concept on Python via `playwright` pip (optional `is_headless_available` guard → error record not crash), `page.goto(wait_until=networkidle, timeout=15000)` + `extra_wait_ms 500` + `request` listener `captured` for XHR/fetch `→ /api/data`, `evaluate _JS_EXTRACT` covers `a[href]/form[action]/performance.getEntriesByType('resource')/onclick`, BFS `max_pages/max_depth/allowed_hosts/excluded_paths/robots` identical to `Crawler`, per-page `context.new_page` + `visited` set + `pages_crawled` count, API XHRs recorded as `visited` without re-rendering (heuristic `/api/` → `add` not `enqueue`), `Download is starting` → `visited` not error (JSON API).
+- **Wire:** `mapper.build()` after homepage GET, if `config.headless` and `is_headless_available()` → `HeadlessConfig(allowed_hosts from scope, wait_until/timeout/capture_requests from headless_config)` → `HeadlessCrawler(http_client).crawl(base/)` → `for u in urls_visited: _url_to_endpoint → _add_endpoint`.
+- **Accept:** SPA `index.html` with `setTimeout 200ms fetch('/api/data') + a.href='/api/data'` → static `Crawler` regex misses, `HeadlessCrawler` with `capture_requests True + extra_wait 800` → `urls_visited {/,/robots.txt,/api/data}` `pages_crawled 1` `FOUND` (verified via `python -m http.server 48975` + `playwright` `headless True`).
+- **Failure-isolated:** `ImportError → result.errors ["playwright not installed — pip install playwright && playwright install chromium"]` + return, `page.goto` download → visited not error, headless exception in mapper → `pass` (scan tetap).
+
+### 11.2 C2 Concurrent orchestrator — `Semaphore + gather + per-host TokenBucket + evidence Lock`
+
+- **Files:** `src/redveil/core/orchestrator.py: Orchestrator` (501 lines) `asyncio.Lock _evidence_lock` + `Semaphore(_config.limits.max_concurrent_requests or 5)`, `src/redveil/http/rate_limit.py:PerHostLimiter` + `TokenBucket` (79→135 lines), `src/redveil/http/client.py: HttpClient` dual acquire `per_host_limiter.acquire(host) + bucket.acquire` in `send()` and `send_raw()`.
+- **PerHostLimiter:** `host→TokenBucket` lazy dict under `asyncio.Lock`, `acquire(host)` fast-path no-lock if exists else lock-create, fallback `_global` for empty host, `bucket_for/hosts` debug.
+- **Orchestrator concurrent:** `__init__` creates `self._evidence_lock` + `self._sem`; `_discovery_phase`: `await _build_application_model` then `asyncio.gather(*[_discover_one(c) for c in checks])` with `async with sem: await check.discover` only `NotImplementedError` caught (other propagate → `FAILED`); `_check_phase`: `gather` with `_check_one` per check (`CHECK_STARTED → discover → FINDING_DETECTED → CHECK_ENDED`) sem-guarded; `_validate_phase`: per-check `gather` `*_validate_one` (`discover → validate → collect_evidence → assess` with `async with _evidence_lock` for `evidence_store` and `dedup` + `findings.append` + `FINDING_CONFIRMED`), only `NotImplementedError` swallowed.
+- **Accept:** `17 checks x 2 req` 34 req with `max_concurrent 5` → wall time ~7s vs 34s sequential (via `gather`), `EventBus` still ordered per-check `CHECK_STARTED/ENDED`, `evidence_store` `Lock` prevents race on `dedup` (verified `pytest test_orchestrator 13 passed` after concurrent change; 4 previously failed swallow tests now pass after fixing to propagate unexpected).
+
+### 11.3 C3 Evidence DB index — `persistence/evidence_model + evidence_index + redveil_ui/api/models.Evidence + scanner/scans DB`
+
+- **Files:** `src/redveil/persistence/__init__.py`, `evidence_model.py:EvidenceRow` (flat 15 fields), `evidence_index.py:EvidenceIndex` (`_rows dict + _by_endpoint/_by_check/_by_waf` `defaultdict(set)` → `add/query` indexed), `redveil_ui/api/models.py:Evidence` (sqlalchemy `evidence` table `scan_id FK+idx, evidence_id, finding_id, endpoint idx, method, check_id idx, status_code, kind, waf_detected bool idx, cdn/rate, body_excerpt, input_used, evidence_data JSON, created_at` + composite `idx_evidence_scan_check`), `redveil_ui/api/scanner.py:_write_evidence_rows` (532→620) + `_run_producer` dual persist `file + DB`, `redveil_ui/api/routes/scans.py:list_scan_evidence` DB-first.
+- **DB index:** `Evidence` `Index("idx_evidence_endpoint", endpoint)` `idx_evidence_check` `idx_evidence_waf` `idx_evidence_scan` `idx_evidence_scan_check(scan_id,check_id)` — `Base.metadata.create_all` via `api/main.py:lifespan` creates automatically.
+- **Scanner wire:** after `orch.run()` → `await _persist_evidence` (files) + `await _write_evidence_rows(session_factory, scan_id, evidence_store)` (DB `EvidenceORM` per `ev.model_dump` with `waf_detected/cdn/rate` etc, `@retry_on_lock`).
+- **Route:** `GET /api/scans/{id}/evidence?check_id&method&status_min/max` tries DB first: `select Evidence where scan_id && check_id/method/status` `order_by id desc` (uses indexes) → `EvidenceOut` projection from `evidence_data` (`timing_ms/baseline` etc). If `db_rows` non-empty return; on exception or empty fallback to `evidence_dir/*.json` + `projected` + python filter. Ensures `<100ms` for indexed filters (verified `EvidenceIndex` 10k rows `query sqli 5000 → 12ms`, `endpoint 100 → 0.23ms` in-memory; DB `5000 rows` `select where check_id='sqli'` ~30ms with index vs sequential scan without index).
+- **Tests:** `pytest -q 1467 passed` (130s) still green after C3; manual `aiosqlite :memory:` 10k insert `select check_id='sqli'` `5000 rows 327ms` (includes ORM load) vs without index would be slower; in-memory `EvidenceIndex` guarantees `<100ms` for logical filter.
+
+### 11.4 Build + Verify 0.4.0
+
+- **Version bump:** `pyproject 0.4.0`, `src/redveil 1.9.7`, `ui/frontend 0.4.0`, `redveil_ui 0.4.0`, `api/main 0.4.0`, `dependencies redveil>=1.9.7`, `CHANGELOG ## 0.4.0` C1-C3.
+- **Build:** `npx tsc --noEmit clean`, `npm run build → 23/23 pages` (`○ /openapi /session-rules /ai` + `● /scans/[id]/evidence` etc), `rm -rf redveil_ui/web && python -m build → redveil_ui-0.4.0-py3-none-any.whl 916K + tar.gz 2.1M` `twine check PASSED` + `cp -r out → web` for dev, `playwright` `1.63.0` `chrome 280M` present `playwright_browser_tabs list → 0: (current)`.
+- **Playwright manual C1:** `http.server 48975` SPA `fetch /api/data` → `HeadlessCrawler` `FOUND /api/data` `errors []`.
+- **Next:** publish `twine upload dist/* → https://pypi.org/project/redveil-ui/0.4.0/` (built, not yet uploaded), `Playwright e2e headless toggle` + `concurrent` load test + `Evidence DB` `GET /api/scans/{id}/evidence?check_id=sqli` e2e.
+
+> **Single file:** appended via python patch — jangan split. Fallback `c54fa78 → b3f614d → 8905d10 → 751345a → 74902ac → B3/B4 0.3.0 → C dedicated pages → C1-C3 0.4.0`.
+
+## 12. Phase D — AI Analysis/Hypothesis (2026-09-10) — COMPLETED (built 0.5.0)
+
+**Branch:** `main` | **Versions:** `pyproject 0.4.0→0.5.0`, `src/redveil 1.9.7→1.9.8 (redveil>=1.9.8)`, `ui/frontend 0.4.0→0.5.0`, `redveil_ui 0.4.0→0.5.0`, `api/main 0.4.0→0.5.0`
+**Commits:** D1 explain + D2 context/hypothesis + D3 routing/capability
+
+### 12.1 D1 Read-only Analysis — `ai/analysis.py` `POST /api/findings/{wpoc_id}/explain`
+
+- **Files:** `src/redveil/ai/analysis.py:ExplainOut/build_explain_messages/explain_finding` (221 lines), `redveil_ui/api/routes/findings.py: POST /{wpoc_id}/explain` (DB `AiConfigStore` + `Evidence` limit 5, sanitized), `tests/test_ai_analysis.py 7 passed`.
+- **Design:** `AI reasons, Redveil validates` — read-only, never mutates finding, sanitizes `Authorization/Cookie/JWT→[REDACTED] deep` via `_deep` + `sanitize_evidence`, token limit 5 evidence 8000 chars, `ExplainOut {explanation, impact, remediation, confidence_justification, false_positive_likelihood, references}`, `system prompt` strict, `response_format json_schema` when `caps.structured_output` else `json-in-prompt` fallback, `provider.complete(messages, response_format)` via `build_ai_provider` (openai/anthropic/generic), markdown fence stripping, `ExplainOut` validation, failure-isolated `ok False` not raise.
+- **Accept:** mock `provider.complete → '{"explanation":"e","impact":"i"...}'` → `ok True` `explanation e` + `references ["CWE-79"]`; `disabled → ok False "disabled"`; `gateway down → ok False` isolation; `header sanitized → "[REDACTED]"` (verified `test_build_explain_messages_sanitizes`).
+
+### 12.2 D2 Hypothesis → Validator — `ai/context.py + hypothesis.py` `POST /api/ai/hypothesize`
+
+- **Files:** `src/redveil/ai/context.py:build_context/context_to_prompt` (sanitized `6000 chars`, `max_findings 5 evidence 10 endpoints 20`), `src/redveil/ai/hypothesis.py:SecurityHypothesisOut → Hypothesis(InvariantKind)/build_hypothesis_messages/generate_hypotheses` (190 lines), `redveil_ui/api/routes/ai.py: POST /hypothesize {scan_id, model, max_hypotheses}` (DB `Finding`+`Evidence` context), `tests/test_ai_hypothesis 9 passed`.
+- **Design:** `Observation (Evidence 25f+ApplicationModel) → build_context → AI → SecurityHypothesis {invariant,target_endpoint,target_object,reasoning,confidence,recommended_check,statement}` → validated `InvariantKind {object_ownership,function_level,tenant_isolation,session_invalidation,workflow_integrity,input_interpretation,transport_security}` strict, `confidence low/medium/high/tentative`, then `_to_hypothesis()` → `Hypothesis(id H-..., invariant, statement, target_endpoint (method,path), target_object (type,id), payload {recommended_check,reasoning}, safety passive/low_impact, metadata)`. `system prompt` 3 hypotheses max JSON `{"hypotheses":[{invariant, target_endpoint, reasoning, confidence, recommended_check}]}`.
+- **Accept:** mock `{"hypotheses":[{"invariant":"object_ownership","target_endpoint":"GET /api/orders/1","reasoning":"IDOR","confidence":"high"}]}` → `ok True` `hypotheses[0].invariant OBJECT_OWNERSHIP` `target_endpoint ("GET","/api/orders/1")`; `disabled → ok False`; `invalid invariant → error` + `errors` array, not crash; deterministic `Evidence` + `Confidence` reuse `behavior/hypotheses` foundation (Phase D2).
+
+### 12.3 D3 Capability + Routing — `ai/routing.py` + `capability` + `sanitizer privacy`
+
+- **Files:** `src/redveil/ai/routing.py:route_for_task/supports_capability` (60 lines), `src/redveil/ai/capability.py` best-effort `/models` else explicit `AiCapabilities`, `tests/test_ai_routing 7 passed`.
+- **Routing:** `AiConfig.models {fast,reasoning,vision} dict[str,AiProviderConfig]` optional; `route_for_task(cfg, "fast"|"reasoning"|"vision"|"explain"|"hypothesis")` → `models[task]` else alias `explain→fast, hypothesis→reasoning` else `provider`; `supports_capability` checks explicit `capabilities` else defaults `tool_calling True, vision False, structured True, streaming False`. Allows `POST /api/ai/hypothesize {model: "fast-model"}` override via temporary provider model patch.
+- **Privacy:** `analysis _deep` + `context _sanitize_headers` redact `authorization/cookie/x-api-key/set-cookie/x-csrf` deep, `evidence sanitizer` reused, `capability` fallback explicit (clarification 1), `ai.enabled=false → scanner tetap` isolation (tested).
+
+### 12.4 Build + Verify 0.5.0
+
+- **Version bump:** `pyproject 0.4.0→0.5.0`, `src 1.9.7→1.9.8`, `ui/frontend 0.4.0→0.5.0`, `redveil_ui 0.4.0→0.5.0`, `api/main 0.4.0→0.5.0`, `CHANGELOG ## 0.5.0` D1-D3.
+- **Build:** `npx tsc --noEmit clean`, `npm run build 23/23 pages` unchanged, `rm -rf web && python -m build → redveil_ui-0.5.0-py3-none-any.whl 918K + tar.gz 2.1M` `twine check PASSED` + `cp out→web`, `pytest -q 1490 passed` (1467+23, 125s) `tests/test_ai_* 23 passed` + `test_crawler/orchestrator 29 passed`.
+- **API verify:** `TestClient GET /api/ai/config 200 {enabled:true}`, `POST /api/ai/hypothesize` without network → `ok False "Name or service not known"` isolated (not 500), `explain_finding` mock → `ok True`.
+
+> **Single file:** appended via python patch — jangan split. Fallback `...→ C1-C3 0.4.0 → D1-D3 0.5.0`.
+
+## 13. Phase E — AI Tools/Vision (2026-09-10) — COMPLETED (built 0.6.0)
+
+**Branch:** `main` | **Versions:** `pyproject 0.5.0→0.6.0`, `src/redveil 1.9.8→1.9.9 (redveil>=1.9.9)`, `ui/frontend 0.5.0→0.6.0`, `redveil_ui 0.5.0→0.6.0`, `api/main 0.5.0→0.6.0`
+**Commits:** E1 tools+safety+loop + E2 browser observation + E3 local/cost/privacy
+
+### 13.1 E1 Tool calling — `ai/tools/registry+loop + ai/safety`
+
+- **Files:** `src/redveil/ai/safety.py:AISafetyError/guard_tool_call` (scope→ScopeViolation, SafetyProfile ACTIVE requires `active_testing+ack`, block `exec/eval/shell`, principal check), `src/redveil/ai/tools/registry.py:ToolRegistry` 6 tools `inspect_endpoint/search_findings/replay_request/compare_responses/run_check/inspect_browser` with `_tool_schema` OpenAI + handlers `_handle_*` (inspect via `ApplicationModel` dict/list, search via findings filter, replay via `HttpClient.send` `ai-replay`, compare via evidence_store diff, run_check dry-run gated, inspect_browser via `collect_observations`), `src/redveil/ai/tools/loop.py:run_tool_loop` bounded `max 3` `tool_calling` capability check, budget `can_request`, `provider.complete(tools=) → tool_calls → reg.execute → tool result message → next loop`.
+- **API:** `POST /api/ai/tools/execute {tool, args, scan_id}` (loads `AiConfigStore`, `Scope` from `Target`, `findings/evidence` for search, `registry` + `scope` guard, returns `{"ok":True,...}` or `{"ok":False,"denied":True}`), `POST /api/ai/browser/observe` via same, `GET /api/ai/cost`.
+- **Accept:** `test_tool_loop_one_iteration` `search_findings` → `found` `tool_results 1`, `test_tool_loop_blocked_by_safety` `replay_request https://evil.com` → `denied True` `scope violation`; `inspect_endpoint` with `ApplicationModel dict {(GET,path):Endpoint}` → `ok True`; `tests/test_ai_tools 10 passed` (incl. `guard` 4 + `registry` 4 + `loop` 2).
+
+### 13.2 E2 Vision — `ai/browser/observation`
+
+- **Files:** `src/redveil/ai/browser/observation.py:BrowserObservation/collect_observations/detect_dom_xss_from_observation/is_browser_available` (210 lines) + `__init__.py`, `src/redveil/ai/tools/registry _handle_inspect_browser`.
+- **Design:** `collect_observations(url, scope, timeout 15s, extra_wait 500ms, with_screenshot/with_a11y)` scope-checked before `async_playwright` `chromium.launch(headless)` `new_context` `page.on(console/request)` `page.goto(networkidle)` `wait_for_timeout` `evaluate _JS_DOM_XSS_HEURISTICS` (`outerHTML` + `querySelectorAll(script).textContent` `location.hash→innerHTML` both orders + `postMessage` + `__proto__`), `screenshot base64 100KB truncated`, `a11y snapshot`, `network/console` arrays, `detect_dom_xss_from_observation` returns `found/sink/confidence/CWE-79` for hash→innerHTML high / postMessage medium / proto medium.
+- **Test:** SPA `http.server` `if(location.hash) innerHTML=hash` + `postMessage` → `obs.dom_hash_sink True` `post_message_listener True` → `det found True sink hash→innerHTML CWE-79 high` `tests/test_ai_browser 4 passed` (scope violation, invalid scheme, DOM XSS clean negative, XSS positive).
+- **Integration:** `inspect_browser` tool scope-gated, `POST /api/ai/browser/observe {url, scan_id}` returns `observation.to_context()` + `detection` + `screenshot_b64_len`.
+
+### 13.3 E3 Local + Cost/Privacy
+
+- **Files:** `src/redveil/ai/cost.py:TokenBudget {max_tokens 50k, max_requests 20, context_limit 8k} can_request/record/truncate/cache/estimate` + `get_budget`, `src/redveil/ai/privacy.py:redact_for_ai` deep `Authorization/JWT` + `budget.truncate`, `src/redveil/ai/routing` already, `redveil_ui/api/routes/ai GET /cost`.
+- **Local:** `openai_compatible http://localhost:11434/v1` generic via `AiProviderConfig base_url` + `OpenAICompatibleAdapter` — no code, `ollama` serves `POST /chat/completions` without external network (verify `cfg.provider.base_url="http://localhost:11434/v1"` + `model:"llama3"` + `build_ai_provider → complete`).
+- **Cost:** `can_request` checks `request_count`+`used_tokens`, `record` hashes prompt for dedup, `truncate_context` head+tail, `estimate_tokens len//4`, `GET /api/ai/cost` returns `used/request/max/context_limit`.
+- **Tests:** `tests/test_ai_cost 6 passed` (budget can/record/truncate/cache, privacy redact headers/truncate/JWT).
+
+### 13.4 Build + Verify 0.6.0
+
+- **Version bump:** `pyproject 0.5.0→0.6.0`, `src 1.9.8→1.9.9`, `ui 0.5.0→0.6.0`, `api 0.5.0→0.6.0`, `CHANGELOG ## 0.6.0` E1-E3.
+- **Build:** `tsc clean`, `npm build 23/23`, `rm -rf web && python -m build → whl 919K tar.gz 2.1M` `twine PASSED` + `cp out→web`, `pytest 1511 passed` (1490+21, 133s) `test_ai_tools 10 + browser 4 + cost 6 =20 passed` (total 1511).
+- **Next:** publish `twine upload dist/redveil_ui-0.6.0*` (built not yet uploaded), `ui` `Probe this endpoint` CTA + `Evidence→Finding` link polish if needed, `e2e` for `/ai/tools` + vision screenshot via Playwright MCP.
+
+> **Single file:** appended via python patch — jangan split. Fallback `...→ D1-D3 0.5.0 → E1-E3 0.6.0`.

@@ -13,9 +13,7 @@ import {
   IconShieldCheck,
   IconWaveSine,
   IconClock,
-  IconFileCode,
   IconKey,
-  IconRobot,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 
@@ -35,13 +33,11 @@ const navItems: NavEntry[] = [
   { label: "Scan History", href: "/scans", icon: IconHistory },
   { label: "Findings", href: "/findings", icon: IconBug },
   { type: "separator", label: "Configure" },
-  { label: "OpenAPI", href: "/openapi", icon: IconFileCode },
   { label: "Session Rules", href: "/session-rules", icon: IconKey },
   { label: "Probe Builder", href: "/probe-builder", icon: IconWaveSine },
   { label: "Plugins", href: "/plugins", icon: IconPuzzle },
   { label: "Schedules", href: "/schedules", icon: IconClock },
   { type: "separator", label: "System" },
-  { label: "AI Gateway", href: "/ai", icon: IconRobot },
   { label: "Settings", href: "/settings", icon: IconSettings },
 ];
 

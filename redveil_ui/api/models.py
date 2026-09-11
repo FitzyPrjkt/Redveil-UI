@@ -175,3 +175,34 @@ class AiConfigStore(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     config: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)  # AiConfig dict
     updated_at: Mapped[datetime] = mapped_column(default=_now, onupdate=_now, nullable=False)
+
+
+class Evidence(Base):
+    """Evidence index for C3 — fast query by endpoint/check_id/waf (Phase C)."""
+
+    __tablename__ = "evidence"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    scan_id: Mapped[int] = mapped_column(ForeignKey("scans.id", ondelete="CASCADE"), nullable=False, index=True)
+    evidence_id: Mapped[str] = mapped_column(String(64), nullable=False)  # EV-xxxx
+    finding_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    endpoint: Mapped[str | None] = mapped_column(String(1024), nullable=True, index=True)
+    method: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    check_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    status_code: Mapped[int | None] = mapped_column(nullable=True)
+    kind: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    waf_detected: Mapped[bool] = mapped_column(default=False, nullable=False, index=True)
+    cdn_detected: Mapped[bool | None] = mapped_column(nullable=True)
+    rate_limited: Mapped[bool] = mapped_column(default=False, nullable=False)
+    body_excerpt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    input_used: Mapped[str | None] = mapped_column(Text, nullable=True)
+    evidence_data: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(default=_now, nullable=False)
+
+    __table_args__ = (
+        Index("idx_evidence_scan", "scan_id"),
+        Index("idx_evidence_endpoint", "endpoint"),
+        Index("idx_evidence_check", "check_id"),
+        Index("idx_evidence_waf", "waf_detected"),
+        Index("idx_evidence_scan_check", "scan_id", "check_id"),
+    )

@@ -1,4 +1,4 @@
-"""Findings endpoints: cross-scan list + per-finding detail + annotations."""
+"""Findings endpoints: cross-scan list + per-finding detail + annotations + AI explain (D1)."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from redveil_ui.api.db import get_session
-from redveil_ui.api.models import Finding
+from redveil_ui.api.models import AiConfigStore, Evidence, Finding
 from redveil_ui.api.schemas import FindingDetailOut, FindingOut, FindingPatchIn, FindingPatchOut
 
 router = APIRouter()
@@ -73,3 +73,63 @@ async def patch_finding(
     await session.commit()
     await session.refresh(finding)
     return finding
+
+
+@router.post("/{wpoc_id}/explain", response_model=dict)
+async def explain_finding_route(
+    wpoc_id: str, session: AsyncSession = Depends(get_session)
+) -> dict:
+    """AI explain for a finding (D1 read-only). Uses sanitized evidence.
+
+    Returns {"ok": True, "explanation": ..., "remediation": ...} or {"ok": False, "error": ...}.
+    Never mutates finding. Failure-isolated: AI disabled/down → ok=False.
+    """
+    result = await session.execute(select(Finding).where(Finding.wpoc_id == wpoc_id))
+    finding = result.scalar_one_or_none()
+    if finding is None:
+        raise HTTPException(status_code=404, detail="finding not found")
+
+    # Load AI config
+    res2 = await session.execute(select(AiConfigStore).limit(1))
+    row = res2.scalars().first()
+    if not row or not isinstance(row.config, dict):
+        return {"ok": False, "error": "AI not configured"}
+    cfg_dict = row.config
+    if not cfg_dict.get("enabled"):
+        return {"ok": False, "error": "AI disabled (enabled=false)"}
+
+    # Load evidence for this finding (via evidence_data ids or DB)
+    evidence_payloads: list[dict] = []
+    try:
+        # Try DB evidence indexed by scan_id
+        res3 = await session.execute(select(Evidence).where(Evidence.scan_id == finding.scan_id).limit(5))
+        for ev in res3.scalars().all():
+            evidence_payloads.append(ev.evidence_data or {})
+        # If finding has evidence_ids, filter to those
+        f_data = finding.finding_data or {}
+        e_ids = f_data.get("evidence_ids") or []
+        if e_ids and evidence_payloads:
+            # evidence_data may not have id field; keep all if mismatch
+            pass
+    except Exception:
+        pass
+
+    # Fallback to finding_data itself
+    finding_dict = {
+        "id": finding.wpoc_id,
+        "title": finding.title,
+        "severity": finding.severity,
+        "confidence": finding.confidence,
+        "status": finding.status,
+        "endpoint": finding.endpoint,
+        "check_id": finding.check_id,
+        "finding_data": finding.finding_data,
+    }
+
+    try:
+        from redveil.ai.analysis import explain_finding as _explain
+
+        out = await _explain(finding=finding_dict, evidence=evidence_payloads, ai_config=cfg_dict)
+        return out
+    except Exception as e:
+        return {"ok": False, "error": str(e)}

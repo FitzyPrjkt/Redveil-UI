@@ -47,8 +47,11 @@ class OpenAICompatibleAdapter(AIProvider):
             else:
                 payload_messages.append(m)
 
+        # Wrapping: allow OPENAI_BASE_URL -> REDVEIL_BASE_URL env fallback
+        base_url = self.config.resolved_base_url() or self.config.base_url
+        model = self.config.resolved_model()
         body: dict[str, Any] = {
-            "model": self.config.model,
+            "model": model,
             "messages": payload_messages,
         }
         # Capability fallback: if explicitly disabled, don't send
@@ -70,13 +73,13 @@ class OpenAICompatibleAdapter(AIProvider):
         if self.config.extra_body:
             body.update(self.config.extra_body)
 
-        url = f"{self.config.base_url}/chat/completions"
+        url = f"{base_url}/chat/completions"
         # Some proxies use /v1/chat/completions, others /chat/completions — try base_url as-is first
         # If base_url already ends with /v1, this becomes /v1/chat/completions (correct)
         resp = await self._client.post(url, json=body, headers=headers)
         # If 404, try alternative without /chat
         if resp.status_code == 404:
-            alt_url = f"{self.config.base_url}/completions"
+            alt_url = f"{base_url}/completions"
             resp2 = await self._client.post(alt_url, json=body, headers=headers)
             if resp2.status_code < 400:
                 resp = resp2

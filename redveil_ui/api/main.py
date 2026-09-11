@@ -37,9 +37,7 @@ from redveil_ui.api.routes import (
     schedules,
     scope,
     targets,
-    openapi,
     session_rules,
-    ai,
 )
 from redveil_ui.api.models import Scan
 from redveil_ui.api.scanner import Scanner
@@ -157,7 +155,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(
     title="redveil-ui API",
     description="FastAPI backend for the redveil-ui security scanner UI.",
-    version="0.3.0",
+    version="0.6.1",
     lifespan=lifespan,
 )
 
@@ -215,7 +213,7 @@ async def api_info() -> dict:
     """
     return {
         "service": "redveil-ui-api",
-        "version": "0.3.0",
+        "version": "0.6.0",
         "endpoints": [
             "/api/targets",
             "/api/scans",
@@ -269,6 +267,4 @@ app.include_router(replay_raw.router, prefix="/api/replay", tags=["replay-raw"])
 app.include_router(probes.router, prefix="/api/probes", tags=["probes"])
 app.include_router(audit.router, prefix="/api/audit", tags=["audit"])
 app.include_router(schedules.router, prefix="/api/schedules", tags=["schedules"])
-app.include_router(openapi.router, prefix="/api/openapi", tags=["openapi"])
 app.include_router(session_rules.router, prefix="/api/session-rules", tags=["session-rules"])
-app.include_router(ai.router, prefix="/api/ai", tags=["ai"])

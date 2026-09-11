@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from redveil_ui.api.db import get_session
 from redveil_ui.api.event_bus import get_event_bus
-from redveil_ui.api.models import Finding, Scan, Target
+from redveil_ui.api.models import Evidence, Finding, Scan, Target
 from redveil_ui.api.schemas import FindingOut, ScanCreate, ScanOut, ScanStatus
 from redveil_ui.api.scope_check import check_target_url_in_scope
 from redveil_ui.api.sse import event_generator, format_sse
@@ -569,6 +569,43 @@ async def list_scan_evidence(
     scan = await session.get(Scan, scan_id)
     if scan is None:
         raise HTTPException(status_code=404, detail="scan not found")
+
+    # C3: Try DB index first (fast, indexed query)
+    try:
+        stmt = select(Evidence).where(Evidence.scan_id == scan_id)
+        if check_id:
+            stmt = stmt.where(Evidence.check_id == check_id)
+        if method:
+            stmt = stmt.where(Evidence.method == method.upper())
+        if status_min is not None:
+            stmt = stmt.where(Evidence.status_code >= status_min)
+        if status_max is not None:
+            stmt = stmt.where(Evidence.status_code <= status_max)
+        stmt = stmt.order_by(Evidence.id.desc())
+        db_result = await session.execute(stmt)
+        db_rows = list(db_result.scalars().all())
+        if db_rows:
+            out: list[EvidenceOut] = []
+            for r in db_rows:
+                out.append(EvidenceOut(
+                    finding_id=r.finding_id or "",
+                    evidence_id=r.evidence_id,
+                    title="",
+                    severity="info",
+                    endpoint=r.endpoint or "",
+                    method=r.method,
+                    status_code=r.status_code,
+                    timing_ms=(r.evidence_data or {}).get("timing_ms"),
+                    baseline_timing_ms=(r.evidence_data or {}).get("baseline_timing_ms"),
+                    length=(r.evidence_data or {}).get("relevant_headers", {}).get("content-length"),
+                    body_excerpt=r.body_excerpt or "",
+                    input_used=r.input_used,
+                    check_id=r.check_id,
+                    timestamp=(r.evidence_data or {}).get("timestamp"),
+                ))
+            return out
+    except Exception as e:
+        log.debug("evidence DB query fallback: %s", e)
 
     rows: list[EvidenceOut] = []
     evidence_dir = Path(scan.output_dir) / "evidence" if scan.output_dir else None

@@ -40,6 +40,7 @@ from redveil.http.client import HttpClient
 from redveil.http.session import AnonymousAuth
 from redveil.plugins.loader import build_default_registry
 
+from redveil_ui.api.models import Evidence as EvidenceORM
 from redveil_ui.api.models import Finding as FindingORM
 from redveil_ui.api.schemas import CheckOut
 from redveil_ui.api.db_retry import retry_on_lock
@@ -109,6 +110,64 @@ async def _write_finding_rows(
         await session.commit()
 
 
+@retry_on_lock()
+async def _write_evidence_rows(
+    session_factory: async_sessionmaker,
+    scan_id: int,
+    evidence_store: dict,
+) -> None:
+    """Insert EvidenceORM rows indexed by scan_id/check_id/endpoint/waf (Phase C3)."""
+    if not evidence_store:
+        return
+    async with session_factory() as session:
+        for ev_id, ev in evidence_store.items():
+            try:
+                payload = ev.model_dump(mode="json", exclude_none=True) if hasattr(ev, "model_dump") else dict(ev)
+            except Exception:
+                payload = {}
+            # Extract indexed fields from Evidence model
+            endpoint = getattr(ev, "endpoint", None) or payload.get("endpoint")
+            method = getattr(ev, "method", None) or payload.get("method")
+            check_id = getattr(ev, "check_id", None) or payload.get("check_id")
+            # Try to infer check_id from finding association or kind
+            if not check_id:
+                # Evidence doesn't have check_id directly, use kind as proxy
+                check_id = payload.get("check_id") or payload.get("kind")
+            status_code = getattr(ev, "status_code", None)
+            if status_code is None:
+                status_code = payload.get("status_code")
+            kind = getattr(ev, "kind", None)
+            if kind is not None and hasattr(kind, "value"):
+                kind = kind.value
+            else:
+                kind = payload.get("kind")
+            waf_detected = bool(getattr(ev, "waf_detected", False) or payload.get("waf_detected", False))
+            cdn_detected = getattr(ev, "cdn_detected", None)
+            if cdn_detected is None:
+                cdn_detected = payload.get("cdn_detected")
+            rate_limited = bool(getattr(ev, "rate_limited", False) or payload.get("rate_limited", False))
+            body_excerpt = getattr(ev, "body_excerpt", None) or payload.get("body_excerpt")
+            input_used = getattr(ev, "input_used", None) or payload.get("input_used")
+            row = EvidenceORM(
+                scan_id=scan_id,
+                evidence_id=ev_id,
+                finding_id=getattr(ev, "finding_id", None) or payload.get("finding_id"),
+                endpoint=endpoint,
+                method=method,
+                check_id=check_id,
+                status_code=status_code,
+                kind=kind,
+                waf_detected=waf_detected,
+                cdn_detected=cdn_detected,
+                rate_limited=rate_limited,
+                body_excerpt=(body_excerpt or "")[:2000] if body_excerpt else None,
+                input_used=input_used,
+                evidence_data=payload,
+            )
+            session.add(row)
+        await session.commit()
+
+
 def _build_config(
     target_url: str,
     target_name: str | None,
@@ -173,12 +232,21 @@ def _build_config(
     limits = LimitsConfig()
     if max_requests is not None:
         limits.max_requests = max_requests
+    elif profile.lower() == "active" or max_destructive_level in ("L3", "L4", "L5", "L6") or allow_destructive:
+        # Active & destructive scans need ~1500-2000 req (sqli 640 + command 1190)
+        limits.max_requests = 3000
     if rps is not None:
         limits.requests_per_second = rps
 
     # AuthorizationConfig already accepts both "L1".."L6" and "1".."6" via
     # its own validator and normalizes to int. We can pass the string through.
+    # L3-L6 (destructive) require active_testing + acknowledged_safety_terms when
+    # allow_destructive is true. Infer them from profile/allow_destructive.
+    is_active_profile = profile.lower() == "active"
+    needs_active_ack = allow_destructive or is_active_profile
     authorization = AuthorizationConfig(
+        active_testing=needs_active_ack,
+        acknowledged_safety_terms=needs_active_ack,
         allow_destructive=allow_destructive,
         max_destructive_level=max_destructive_level,
     )
@@ -436,12 +504,18 @@ class Scanner:
         # Persist findings to the DB so the UI can show them.
         await self._persist_findings(scan_id, ctx.findings, target_output_dir)
 
-        # Persist Evidence objects to disk so the Evidence Log page can
-        # surface them later. The orchestrator keeps evidence in-memory only;
-        # we serialize each Evidence as JSON in output_dir/evidence/.
+        # Persist Evidence objects to disk + DB index (C3) so the Evidence Log
+        # page can surface them later. The orchestrator keeps evidence in-memory
+        # only; we serialize each Evidence as JSON in output_dir/evidence/ and
+        # also index in the DB for fast filtered queries.
         try:
             evidence_store = orch.evidence_store
             await self._persist_evidence(evidence_store, target_output_dir)
+            # C3: DB index for fast queries
+            try:
+                await _write_evidence_rows(self._session_factory, scan_id, evidence_store)
+            except Exception as e:
+                log.warning("failed to write evidence rows for scan %s: %s", scan_id, e)
         except Exception as e:
             log.warning("failed to persist evidence for scan %s: %s", scan_id, e)
 

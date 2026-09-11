@@ -24,7 +24,7 @@ import httpx
 
 from redveil.config import LimitsConfig
 from redveil.core.scope import ScopeController, ScopeViolation
-from redveil.http.rate_limit import TokenBucket
+from redveil.http.rate_limit import PerHostLimiter, TokenBucket
 from redveil.http.request import Request
 from redveil.http.response import Response
 from redveil.http.session import AnonymousAuth, AuthProvider
@@ -74,7 +74,12 @@ class HttpClient:
                 self._session_engine = SessionRuleEngine(cfg)
             except Exception:
                 self._session_engine = None
+        # C2: per-host rate limiting + global fallback
         self._bucket = TokenBucket(
+            rate=limits.requests_per_second,
+            capacity=limits.max_concurrent_requests,
+        )
+        self._per_host_limiter = PerHostLimiter(
             rate=limits.requests_per_second,
             capacity=limits.max_concurrent_requests,
         )
@@ -137,6 +142,14 @@ class HttpClient:
                 f"refusing further requests"
             )
 
+        # C2: per-host acquire (host lowercased) then global bucket for backwards compat
+        try:
+            from urllib.parse import urlparse as _urlparse
+
+            _host = (_urlparse(request.url).hostname or "").lower()
+        except Exception:
+            _host = ""
+        await self._per_host_limiter.acquire(_host)
         await self._bucket.acquire()
         async with self._semaphore:
             self._request_count += 1
@@ -182,6 +195,13 @@ class HttpClient:
             raise ScopeViolation(f"out-of-scope request blocked: {request.url} ({decision.reason})")
         if self._request_count >= self._limits.max_requests:
             raise RuntimeError(f"max_requests limit ({self._limits.max_requests}) reached")
+        try:
+            from urllib.parse import urlparse as _urlparse2
+
+            _host2 = (_urlparse2(request.url).hostname or "").lower()
+        except Exception:
+            _host2 = ""
+        await self._per_host_limiter.acquire(_host2)
         await self._bucket.acquire()
         async with self._semaphore:
             self._request_count += 1

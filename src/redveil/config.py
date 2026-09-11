@@ -368,6 +368,9 @@ class RedVeilConfig(BaseSettings):
         default=None,
         description="Optional allowlist of check IDs to run (e.g. ['sqli-time-based','xss-reflected']). None/empty = all.",
     )
+    # Phase C1: headless crawler for SPA / JS-rendered apps (playwright)
+    headless: bool = Field(default=False, description="Enable headless crawler (requires playwright). When true, AttackSurfaceMapper will use HeadlessCrawler to capture JS-rendered links.")
+    headless_config: dict | None = Field(default=None, description="Optional headless crawler tuning (wait_until, timeout_ms, extra_wait_ms, capture_requests, max_pages, max_depth)")
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> RedVeilConfig:

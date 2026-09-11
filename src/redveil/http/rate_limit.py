@@ -77,3 +77,45 @@ class TokenBucket:
         """Approximate current token count. Snapshot only — may race."""
         elapsed = time.monotonic() - self._last
         return min(self._capacity, self._tokens + elapsed * self._rate)
+
+
+class PerHostLimiter:
+    """Per-host token-bucket limiter (Phase C2).
+
+    Maintains a ``host -> TokenBucket`` dict lazily. Each host gets its
+    own bucket with the same ``rate``/``capacity``. Global fallback bucket
+    is used when host is empty. Buckets are created under a lock so
+    concurrent first-access is safe.
+    """
+
+    def __init__(self, rate: float, capacity: int | None = None):
+        if rate <= 0:
+            raise ValueError("rate must be > 0")
+        self._rate = rate
+        self._capacity = capacity
+        self._buckets: dict[str, TokenBucket] = {}
+        self._lock = asyncio.Lock()
+        # Fallback global bucket for empty host
+        self._global = TokenBucket(rate, capacity)
+
+    async def acquire(self, host: str | None) -> None:
+        if not host:
+            await self._global.acquire()
+            return
+        host = host.lower()
+        # Fast path: bucket exists (no lock)
+        bucket = self._buckets.get(host)
+        if bucket is None:
+            async with self._lock:
+                bucket = self._buckets.get(host)
+                if bucket is None:
+                    bucket = TokenBucket(self._rate, self._capacity)
+                    self._buckets[host] = bucket
+        await bucket.acquire()
+
+    def bucket_for(self, host: str) -> TokenBucket | None:
+        return self._buckets.get(host.lower()) if host else None
+
+    @property
+    def hosts(self) -> list[str]:
+        return list(self._buckets.keys())
